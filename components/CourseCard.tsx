@@ -30,13 +30,19 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   }, [slotId, binomeId]);
 
   const fetchData = async () => {
-    const { data } = await supabase
+    // CORRECTION : On liste les colonnes explicitement pour éviter d'appeler 'time'
+    const { data, error } = await supabase
       .from('submissions')
-      .select('*')
+      .select('id, created_at, status, author, comment, link_url, file_url, audio_url, course_name, day_name, week_id')
       .eq('course_name', slotId)
       .eq('binome_id', binomeId)
       .order('created_at', { ascending: false });
     
+    if (error) {
+      console.error("Erreur fetch:", error.message);
+      return;
+    }
+
     if (data) {
       setSubmissions(data);
       if (data.length > 0) {
@@ -47,14 +53,13 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     }
   };
 
-  // SAUVEGARDE (Inclusion de day_name et week_id pour corriger l'erreur 400 du planning)
   const saveSubmission = async (payload: any) => {
-    const newStatus = status === 'gris' ? 'rouge' : status;
+    const newStatus = payload.status || (status === 'gris' ? 'rouge' : status);
     try {
       const { error } = await supabase.from('submissions').insert([{ 
         course_name: slotId, 
-        day_name: day,         // Nécessaire pour le filtre du planning
-        week_id: currentWeek,  // Nécessaire pour le filtre du planning
+        day_name: day,         
+        week_id: currentWeek,  
         status: newStatus, 
         author: profile?.prenom || 'Anonyme', 
         user_id: profile?.id || 'anonymous',
@@ -87,7 +92,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     setLoading(false);
   };
 
-  // UPLOAD UNIVERSEL (Photo ou Document)
   const handleFileUpload = async (event: any) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -112,7 +116,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     }
   };
 
-  // CORRECTIF AUDIO MULTI-PLATEFORME (iOS/Android)
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -151,7 +154,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   };
 
   const updateStatus = async (newStat: string) => {
-    await saveSubmission({ comment: `Statut modifié en ${newStat}`, status: newStat });
+    await saveSubmission({ comment: `Statut : ${newStat}`, status: newStat });
   };
 
   const deleteItem = async (id: string) => {
@@ -163,14 +166,12 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   return (
     <div className={`bg-white rounded-3xl shadow-md border-l-[10px] flex flex-col h-full min-h-[300px] overflow-hidden transition-all duration-500 ${statusStyles[status].border}`}>
       
-      {/* ZOOM IMAGE */}
       {zoomedImage && (
         <div className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center p-4" onClick={() => setZoomedImage(null)}>
           <img src={zoomedImage} className="max-w-full max-h-full object-contain rounded-lg" />
         </div>
       )}
 
-      {/* HEADER */}
       <div className="p-3 border-b flex justify-between items-center bg-white">
         <span className="font-[900] italic text-xl text-blue-600 tracking-tighter">{slot.time}</span>
         <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${statusStyles[status].bg} ${statusStyles[status].text}`}>
@@ -178,7 +179,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         </span>
       </div>
 
-      {/* LISTE DES MESSAGES */}
       <div className="p-2 flex-1 overflow-y-auto space-y-2 bg-[#F9FAFB]">
         {submissions.map((s) => (
           <div key={s.id} className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 relative group animate-in fade-in slide-in-from-bottom-2">
@@ -190,20 +190,17 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
             
             {s.comment && <p className="text-[9px] font-bold text-gray-800 uppercase italic leading-tight">{s.comment}</p>}
             
-            {/* LIEN */}
             {s.link_url && (
               <a href={s.link_url} target="_blank" rel="noopener noreferrer" className="mt-2 block w-full bg-blue-600 text-white text-center py-2 rounded-lg text-[8px] font-black uppercase italic shadow-sm">
                 🔗 Ouvrir le lien
               </a>
             )}
 
-            {/* PHOTOS ET DOCUMENTS */}
             {s.file_url && (
               <div className="mt-2">
                 {s.file_url.match(/\.(jpeg|jpg|gif|png)$/i) ? (
                   <div className="relative group">
                     <img src={s.file_url} onClick={() => setZoomedImage(s.file_url)} className="w-full h-32 object-cover rounded-xl cursor-zoom-in border" />
-                    {/* Bouton Enregistrer spécial Mobile */}
                     <a href={s.file_url} target="_blank" download className="absolute bottom-2 right-2 bg-white/90 p-2 rounded-lg shadow-md flex items-center gap-1 active:scale-95 transition-all">
                       <span className="text-[10px]">📥</span>
                       <span className="text-[7px] font-black uppercase text-blue-600">Enregistrer</span>
@@ -227,7 +224,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         {submissions.length === 0 && <p className="text-[8px] text-gray-300 italic text-center mt-10 uppercase font-black">Disponible</p>}
       </div>
 
-      {/* ZONE DE SAISIE */}
       <div className="p-2 bg-white border-t space-y-1.5">
         {status !== 'vert' ? (
           <>
@@ -242,7 +238,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
             </div>
 
             <div className="grid grid-cols-3 gap-1">
-              {/* Bouton Joindre (Photo ou Fichier) */}
               <label className="bg-indigo-500 text-white p-2 rounded-xl text-[8px] font-[900] text-center cursor-pointer active:scale-95 uppercase italic shadow-sm flex items-center justify-center">
                 {loading ? "..." : "📎 JOINDRE"}
                 <input type="file" className="hidden" onChange={handleFileUpload} disabled={loading} />

@@ -6,7 +6,7 @@ import CourseCard from '@/components/CourseCard';
 import ChatModal from '@/components/ChatModal';
 import WeekGeneralInfo from '@/components/WeekGeneralInfo';
 
-// --- FONCTIONS UTILITAIRES ---
+// --- UTILITAIRES ---
 const getWeekIdentifier = (date: Date) => {
   const d = new Date(date.getTime());
   d.setHours(0, 0, 0, 0);
@@ -42,48 +42,46 @@ export default function Home() {
   
   const router = useRouter();
 
-  // --- RÉCUPÉRATION DES STATUTS (SÉCURISÉE) ---
+  // --- RÉCUPÉRATION DES STATUTS (FIX: SANS LA COLONNE TIME) ---
   const fetchModifications = async (binomeId: string, weekId: string) => {
-    // SÉCURITÉ : On ne lance pas la requête si les IDs sont manquants
-    if (!binomeId || !weekId) return;
+    if (!binomeId || binomeId === "null") return;
 
+    // On ne demande que day_name et status qui existent bien en base
     const { data, error } = await supabase
       .from('submissions')
-      .select('day_name, status, time, created_at')
+      .select('day_name, status') 
       .eq('binome_id', binomeId)
-      .eq('week_id', weekId)
-      .order('created_at', { ascending: false });
+      .eq('week_id', weekId);
 
     if (error) {
-      console.error("Erreur de requête Supabase:", error.message);
+      console.error("❌ Erreur Supabase:", error.message);
       return;
     }
 
     if (data) {
-      const latestStatusBySlot: any = {};
-      
-      data.forEach(item => {
-        const cleanDay = item.day_name.trim().toLowerCase();
-        const slotKey = `${cleanDay}-${item.time}`;
-        
-        if (!latestStatusBySlot[slotKey]) {
-          latestStatusBySlot[slotKey] = item.status.trim().toLowerCase();
-        }
-      });
-
       const oranges: string[] = [];
       const greens: string[] = [];
       const daysList = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
-      
-      daysList.forEach(day => {
-        const slotsForDay = Object.keys(latestStatusBySlot)
-          .filter(key => key.startsWith(day))
-          .map(key => latestStatusBySlot[key]);
 
-        if (slotsForDay.some(s => s === 'orange' || s === 'rouge')) {
-          oranges.push(day);
-        } else if (slotsForDay.some(s => s === 'vert')) {
-          greens.push(day);
+      daysList.forEach(day => {
+        const dayEntries = data.filter(item => 
+          item.day_name && item.day_name.trim().toLowerCase() === day
+        );
+
+        if (dayEntries.length > 0) {
+          // Si une ligne est orange ou rouge -> bouton orange
+          const hasAlert = dayEntries.some(e => {
+            const s = e.status?.toLowerCase();
+            return s === 'orange' || s === 'rouge';
+          });
+
+          if (hasAlert) {
+            oranges.push(day);
+          } else {
+            // Sinon si une ligne est verte -> bouton vert
+            const hasGreen = dayEntries.some(e => e.status?.toLowerCase() === 'vert');
+            if (hasGreen) greens.push(day);
+          }
         }
       });
 
@@ -92,7 +90,7 @@ export default function Home() {
     }
   };
 
-  // --- AUTH ET PROFIL ---
+  // --- AUTH & PROFIL ---
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -116,12 +114,12 @@ export default function Home() {
     checkUser();
   }, [router]);
 
-  // --- DÉCLENCHEMENT DU FETCH ---
+  // --- SURVEILLANCE ---
   useEffect(() => {
-    if (selectedBinomeId && currentWeekId) {
+    if (selectedBinomeId) {
       fetchModifications(selectedBinomeId, currentWeekId);
     }
-  }, [selectedBinomeId, currentWeekId]);
+  }, [selectedBinomeId, currentWeekId, selectedDay]);
 
   const changeWeek = (offset: number) => {
     const newDate = new Date(viewDate);
@@ -163,14 +161,9 @@ export default function Home() {
                 </select>
               </div>
             )}
-
             <div className="flex items-center gap-2">
-              <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic shadow-sm hover:bg-blue-700 transition-colors">
-                💬 <span className="hidden sm:inline ml-1">CHAT</span>
-              </button>
-              <button onClick={() => window.open('https://meet.google.com/new', '_blank')} className="bg-emerald-500 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic shadow-sm hover:bg-emerald-600 transition-colors">
-                📹 <span className="hidden sm:inline ml-1">MEET</span>
-              </button>
+              <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic hover:bg-blue-700 transition-colors">💬 CHAT</button>
+              <button onClick={() => window.open('https://meet.google.com/new', '_blank')} className="bg-emerald-500 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic hover:bg-emerald-600 transition-colors">📹 MEET</button>
               <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="text-[9px] font-black text-red-500 border-2 border-red-500 px-3 py-2 rounded-xl uppercase italic hover:bg-red-500 hover:text-white transition-all">Quitter</button>
             </div>
           </div>
@@ -203,12 +196,12 @@ export default function Home() {
                 let label = null;
 
                 if (isOrange) {
-                  cardStyle = "bg-orange-50 border-orange-500 shadow-orange-100";
+                  cardStyle = "bg-orange-50 border-orange-500 shadow-orange-100 shadow-sm";
                   textColor = "text-orange-600";
                   dotColor = "bg-orange-500";
                   label = <span className="bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic animate-pulse">Modifié</span>;
                 } else if (isGreen) {
-                  cardStyle = "bg-green-50 border-green-500 shadow-green-100";
+                  cardStyle = "bg-green-50 border-green-500 shadow-green-100 shadow-sm";
                   textColor = "text-green-600";
                   dotColor = "bg-green-500";
                   label = <span className="bg-green-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic">Terminé ✓</span>;
@@ -227,7 +220,7 @@ export default function Home() {
             </div>
           ) : (
             <div className="animate-in fade-in duration-500">
-              <button onClick={() => setSelectedDay(null)} className="mb-6 font-black italic uppercase text-[10px] bg-blue-900 text-white p-3 px-8 rounded-full shadow-xl">← RETOUR</button>
+              <button onClick={() => setSelectedDay(null)} className="mb-6 font-black italic uppercase text-[10px] bg-blue-900 text-white p-3 px-8 rounded-full">← RETOUR</button>
               <h2 className="text-5xl sm:text-6xl font-[900] italic uppercase text-blue-600 mb-10 tracking-tighter">{selectedDay}</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-5">
