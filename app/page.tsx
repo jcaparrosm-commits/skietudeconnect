@@ -43,7 +43,7 @@ export default function Home() {
   
   const router = useRouter();
 
-  // --- RÉCUPÉRATION DES STATUTS (LOGIQUE DERNIER MESSAGE) ---
+  // --- RÉCUPÉRATION DES STATUTS DES JOURS ---
   const fetchModifications = async (binomeId: string, weekId: string) => {
     const { data, error } = await supabase
       .from('submissions')
@@ -83,34 +83,38 @@ export default function Home() {
     }
   };
 
-  // --- AUTH ET PROFIL ---
+  // --- AUTH ET RÉCUPÉRATION DES BINOMES ---
   useEffect(() => {
     const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push('/login'); return; }
-      setUser(user);
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) { router.push('/login'); return; }
+      setUser(authUser);
 
-      const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      const userProfile = prof || { prenom: user.email?.split('@')[0], id: user.id, role: 'skieur' };
+      const { data: prof } = await supabase.from('profiles').select('*').eq('id', authUser.id).single();
+      const userProfile = prof || { prenom: authUser.email?.split('@')[0], id: authUser.id, role: 'skieur' };
       setProfile(userProfile);
 
       if (userProfile.role === 'admin') {
+        // L'ADMIN voit tous les binômes pour pouvoir choisir
         const { data: allBinomes } = await supabase.from('binomes').select('*').order('nom_binome');
         setBinomes(allBinomes || []);
         if (allBinomes && allBinomes.length > 0) setSelectedBinomeId(allBinomes[0].id);
       } else {
+        // LE SKIEUR/COLLAB ne récupère que son binôme unique
         const { data: myBinome } = await supabase
           .from('binomes')
           .select('id')
-          .or(`skieur_id.eq.${user.id},collaborateur_id.eq.${user.id}`)
+          .or(`skieur_id.eq.${authUser.id},collaborateur_id.eq.${authUser.id}`)
           .single();
         if (myBinome) setSelectedBinomeId(myBinome.id);
       }
+      
       setLoading(false);
     };
     checkUser();
   }, [router]);
 
+  // Recharger les couleurs quand le binôme, la semaine ou le jour change
   useEffect(() => {
     if (selectedBinomeId) {
       fetchModifications(selectedBinomeId, currentWeekId);
@@ -132,7 +136,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#F0F2F5] pb-10">
-      {/* HEADER AVEC SÉLECTEUR ADMIN */}
+      {/* HEADER */}
       <header className="bg-white p-4 shadow-md border-b-[6px] border-blue-600 sticky top-0 z-[100]">
         <div className="max-w-[1600px] mx-auto flex justify-between items-center">
           <div className="flex flex-col">
@@ -144,6 +148,7 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-4">
+            {/* SÉLECTEUR DE BINOME - UNIQUEMENT POUR ADMIN */}
             {profile?.role === 'admin' && binomes.length > 0 && (
               <div className="flex items-center gap-2 bg-blue-50 p-2 px-3 rounded-xl border border-blue-100">
                 <span className="hidden md:inline text-[9px] font-black text-blue-600 uppercase">Élève :</span>
