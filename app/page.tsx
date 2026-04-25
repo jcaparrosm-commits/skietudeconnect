@@ -43,7 +43,7 @@ export default function Home() {
   
   const router = useRouter();
 
-  // --- RÉCUPÉRATION DES STATUTS DES JOURS ---
+  // --- RÉCUPÉRATION DES STATUTS (LOGIQUE ROBUSTE) ---
   const fetchModifications = async (binomeId: string, weekId: string) => {
     const { data, error } = await supabase
       .from('submissions')
@@ -56,7 +56,8 @@ export default function Home() {
       const latestStatusBySlot: any = {};
       
       data.forEach(item => {
-        const cleanDay = item.day_name.trim();
+        // CORRECTION ICI : .toLowerCase() pour ignorer la majuscule de Supabase
+        const cleanDay = item.day_name.trim().toLowerCase();
         const slotKey = `${cleanDay}-${item.time}`;
         if (!latestStatusBySlot[slotKey]) {
           latestStatusBySlot[slotKey] = item.status;
@@ -65,7 +66,8 @@ export default function Home() {
 
       const oranges: string[] = [];
       const greens: string[] = [];
-      const daysList = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
+      // CORRECTION ICI : Liste en minuscules
+      const daysList = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
       
       daysList.forEach(day => {
         const slotsForDay = Object.keys(latestStatusBySlot).filter(key => key.startsWith(day));
@@ -83,38 +85,34 @@ export default function Home() {
     }
   };
 
-  // --- AUTH ET RÉCUPÉRATION DES BINOMES ---
+  // --- AUTH ET PROFIL ---
   useEffect(() => {
     const checkUser = async () => {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) { router.push('/login'); return; }
-      setUser(authUser);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push('/login'); return; }
+      setUser(user);
 
-      const { data: prof } = await supabase.from('profiles').select('*').eq('id', authUser.id).single();
-      const userProfile = prof || { prenom: authUser.email?.split('@')[0], id: authUser.id, role: 'skieur' };
+      const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      const userProfile = prof || { prenom: user.email?.split('@')[0], id: user.id, role: 'skieur' };
       setProfile(userProfile);
 
       if (userProfile.role === 'admin') {
-        // L'ADMIN voit tous les binômes pour pouvoir choisir
         const { data: allBinomes } = await supabase.from('binomes').select('*').order('nom_binome');
         setBinomes(allBinomes || []);
         if (allBinomes && allBinomes.length > 0) setSelectedBinomeId(allBinomes[0].id);
       } else {
-        // LE SKIEUR/COLLAB ne récupère que son binôme unique
         const { data: myBinome } = await supabase
           .from('binomes')
           .select('id')
-          .or(`skieur_id.eq.${authUser.id},collaborateur_id.eq.${authUser.id}`)
+          .or(`skieur_id.eq.${user.id},collaborateur_id.eq.${user.id}`)
           .single();
         if (myBinome) setSelectedBinomeId(myBinome.id);
       }
-      
       setLoading(false);
     };
     checkUser();
   }, [router]);
 
-  // Recharger les couleurs quand le binôme, la semaine ou le jour change
   useEffect(() => {
     if (selectedBinomeId) {
       fetchModifications(selectedBinomeId, currentWeekId);
@@ -130,13 +128,14 @@ export default function Home() {
 
   if (loading) return <div className="h-screen flex items-center justify-center bg-[#F0F2F5] font-black text-blue-600 italic text-2xl uppercase">Chargement...</div>;
 
-  const days = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
+  // CORRECTION ICI : Liste de boutons en minuscules
+  const days = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
   const morningSlots = ["08:30", "09:30", "10:30", "11:30", "12:30"];
   const afternoonSlots = ["13:30", "14:30", "15:30", "16:30"];
 
   return (
     <main className="min-h-screen bg-[#F0F2F5] pb-10">
-      {/* HEADER */}
+      {/* HEADER AVEC SÉLECTEUR ADMIN */}
       <header className="bg-white p-4 shadow-md border-b-[6px] border-blue-600 sticky top-0 z-[100]">
         <div className="max-w-[1600px] mx-auto flex justify-between items-center">
           <div className="flex flex-col">
@@ -148,7 +147,6 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* SÉLECTEUR DE BINOME - UNIQUEMENT POUR ADMIN */}
             {profile?.role === 'admin' && binomes.length > 0 && (
               <div className="flex items-center gap-2 bg-blue-50 p-2 px-3 rounded-xl border border-blue-100">
                 <span className="hidden md:inline text-[9px] font-black text-blue-600 uppercase">Élève :</span>
