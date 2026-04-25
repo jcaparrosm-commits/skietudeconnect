@@ -13,7 +13,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   
   const mediaRecorder = useRef<MediaRecorder | null>(null);
 
-  // ID UNIQUE : SEMAINE + PLANNING + JOUR + HEURE (Sécurisé avec ?)
+  // ID UNIQUE : SEMAINE + PLANNING + JOUR + HEURE
   const slotId = `${currentWeek}-${profile?.linked_planning || 'standard'}-${day}-${slot.time}`;
 
   const statusStyles: any = {
@@ -47,14 +47,17 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     }
   };
 
+  // SAUVEGARDE (Inclusion de day_name et week_id pour corriger l'erreur 400 du planning)
   const saveSubmission = async (payload: any) => {
     const newStatus = status === 'gris' ? 'rouge' : status;
     try {
       const { error } = await supabase.from('submissions').insert([{ 
         course_name: slotId, 
+        day_name: day,         // Nécessaire pour le filtre du planning
+        week_id: currentWeek,  // Nécessaire pour le filtre du planning
         status: newStatus, 
-        author: profile.prenom, 
-        user_id: profile.id || 'anonymous',
+        author: profile?.prenom || 'Anonyme', 
+        user_id: profile?.id || 'anonymous',
         binome_id: binomeId,
         ...payload 
       }]);
@@ -62,7 +65,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
       setStatus(newStatus);
       await fetchData();
     } catch (err: any) {
-      alert("Erreur : " + err.message);
+      alert("Erreur base de données : " + err.message);
     }
   };
 
@@ -84,7 +87,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     setLoading(false);
   };
 
-  // NOUVEAU : GESTION MULTI-FICHIERS (PHOTO OU DOCUMENT)
+  // UPLOAD UNIVERSEL (Photo ou Document)
   const handleFileUpload = async (event: any) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -100,7 +103,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
       const isImage = file.name.match(/\.(jpeg|jpg|gif|png)$/i);
       await saveSubmission({ 
         file_url: publicUrl, 
-        comment: isImage ? "" : `📄 Doc: ${file.name}` 
+        comment: isImage ? "" : `📄 Fichier : ${file.name}` 
       });
     } catch (err: any) {
       alert("Erreur upload : " + err.message);
@@ -109,7 +112,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     }
   };
 
-  // CORRECTIF AUDIO : MULTI-PLATEFORME (iOS/Android)
+  // CORRECTIF AUDIO MULTI-PLATEFORME (iOS/Android)
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -144,7 +147,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
       
       mediaRecorder.current.start();
       setIsRecording(true);
-    } catch (err) { alert("Micro bloqué ou non supporté"); }
+    } catch (err) { alert("Micro inaccessible (vérifiez HTTPS)"); }
   };
 
   const updateStatus = async (newStat: string) => {
@@ -160,9 +163,10 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   return (
     <div className={`bg-white rounded-3xl shadow-md border-l-[10px] flex flex-col h-full min-h-[300px] overflow-hidden transition-all duration-500 ${statusStyles[status].border}`}>
       
+      {/* ZOOM IMAGE */}
       {zoomedImage && (
         <div className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center p-4" onClick={() => setZoomedImage(null)}>
-          <img src={zoomedImage} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+          <img src={zoomedImage} className="max-w-full max-h-full object-contain rounded-lg" />
         </div>
       )}
 
@@ -174,7 +178,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         </span>
       </div>
 
-      {/* HISTORIQUE / SUBMISSIONS MAP */}
+      {/* LISTE DES MESSAGES */}
       <div className="p-2 flex-1 overflow-y-auto space-y-2 bg-[#F9FAFB]">
         {submissions.map((s) => (
           <div key={s.id} className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 relative group animate-in fade-in slide-in-from-bottom-2">
@@ -186,18 +190,20 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
             
             {s.comment && <p className="text-[9px] font-bold text-gray-800 uppercase italic leading-tight">{s.comment}</p>}
             
+            {/* LIEN */}
             {s.link_url && (
-              <a href={s.link_url} target="_blank" rel="noopener noreferrer" className="mt-2 block w-full bg-blue-600 text-white text-center py-2 rounded-lg text-[8px] font-black uppercase italic tracking-widest hover:bg-blue-700 transition-all shadow-sm">
+              <a href={s.link_url} target="_blank" rel="noopener noreferrer" className="mt-2 block w-full bg-blue-600 text-white text-center py-2 rounded-lg text-[8px] font-black uppercase italic shadow-sm">
                 🔗 Ouvrir le lien
               </a>
             )}
 
-            {/* GESTION PHOTO ET DOCUMENTS */}
+            {/* PHOTOS ET DOCUMENTS */}
             {s.file_url && (
-              <div className="mt-2 relative">
+              <div className="mt-2">
                 {s.file_url.match(/\.(jpeg|jpg|gif|png)$/i) ? (
                   <div className="relative group">
-                    <img src={s.file_url} onClick={() => setZoomedImage(s.file_url)} className="w-full h-32 object-cover rounded-xl cursor-zoom-in" />
+                    <img src={s.file_url} onClick={() => setZoomedImage(s.file_url)} className="w-full h-32 object-cover rounded-xl cursor-zoom-in border" />
+                    {/* Bouton Enregistrer spécial Mobile */}
                     <a href={s.file_url} target="_blank" download className="absolute bottom-2 right-2 bg-white/90 p-2 rounded-lg shadow-md flex items-center gap-1 active:scale-95 transition-all">
                       <span className="text-[10px]">📥</span>
                       <span className="text-[7px] font-black uppercase text-blue-600">Enregistrer</span>
@@ -206,7 +212,10 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
                 ) : (
                   <a href={s.file_url} target="_blank" download className="flex items-center gap-2 bg-blue-50 p-2 rounded-lg border border-blue-100 hover:bg-blue-100 transition-all">
                     <span className="text-xl">📄</span>
-                    <span className="text-[8px] font-black text-blue-700 uppercase italic">Télécharger le document</span>
+                    <div className="flex flex-col">
+                        <span className="text-[8px] font-black text-blue-700 uppercase italic">Document joint</span>
+                        <span className="text-[6px] text-blue-400">Cliquez pour télécharger</span>
+                    </div>
                   </a>
                 )}
               </div>
@@ -233,6 +242,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
             </div>
 
             <div className="grid grid-cols-3 gap-1">
+              {/* Bouton Joindre (Photo ou Fichier) */}
               <label className="bg-indigo-500 text-white p-2 rounded-xl text-[8px] font-[900] text-center cursor-pointer active:scale-95 uppercase italic shadow-sm flex items-center justify-center">
                 {loading ? "..." : "📎 JOINDRE"}
                 <input type="file" className="hidden" onChange={handleFileUpload} disabled={loading} />
@@ -245,7 +255,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
                 {isRecording ? "REC" : "🎤"}
               </button>
 
-              <button onClick={() => updateStatus(status === 'rouge' ? 'orange' : 'vert')} className={`${status === 'rouge' ? 'bg-orange-500' : 'bg-green-600'} text-white p-2 rounded-xl text-[8px] font-[900] uppercase italic shadow-md`}>
+              <button onClick={() => updateStatus(status === 'rouge' ? 'orange' : 'vert')} className={`${status === 'rouge' ? 'bg-orange-500' : 'bg-green-600'} text-white p-2 rounded-xl text-[8px] font-[900] uppercase italic active:scale-95 shadow-md`}>
                 {status === 'rouge' ? 'OUVRIR' : 'FINIR'}
               </button>
             </div>
