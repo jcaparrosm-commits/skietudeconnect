@@ -27,7 +27,6 @@ const getWeekRangeLabel = (date: Date) => {
 };
 
 export default function Home() {
-  // --- ÉTATS ---
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [binomes, setBinomes] = useState<any[]>([]);
@@ -56,8 +55,11 @@ export default function Home() {
       const latestStatusBySlot: any = {};
       
       data.forEach(item => {
+        // On nettoie le jour reçu de Supabase (minuscules + retrait espaces)
         const cleanDay = item.day_name.trim().toLowerCase();
         const slotKey = `${cleanDay}-${item.time}`;
+        
+        // On ne garde que la première occurrence (donc la plus récente grâce au tri)
         if (!latestStatusBySlot[slotKey]) {
           latestStatusBySlot[slotKey] = item.status;
         }
@@ -72,6 +74,7 @@ export default function Home() {
           .filter(key => key.startsWith(day))
           .map(key => latestStatusBySlot[key]);
 
+        // Priorité à l'orange si au moins un créneau récent est orange/rouge
         if (slotsForDay.some(s => s === 'orange' || s === 'rouge')) {
           oranges.push(day);
         } else if (slotsForDay.some(s => s === 'vert')) {
@@ -84,7 +87,6 @@ export default function Home() {
     }
   };
 
-  // --- AUTH ET PROFIL ---
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -129,7 +131,6 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#F0F2F5] pb-10">
-      {/* HEADER AVEC SÉLECTEUR ET MEET REPARÉS */}
       <header className="bg-white p-4 shadow-md border-b-[6px] border-blue-600 sticky top-0 z-[100]">
         <div className="max-w-[1600px] mx-auto flex justify-between items-center">
           <div className="flex flex-col">
@@ -169,7 +170,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* NAV SEMAINE */}
       <nav className="bg-white border-b sticky top-[82px] z-[90] mb-6">
         <div className="max-w-[1600px] mx-auto flex items-center justify-between px-6 py-4">
           <button onClick={() => changeWeek(-1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">←</button>
@@ -187,6 +187,7 @@ export default function Home() {
           {!selectedDay ? (
             <div className="space-y-4">
               {days.map(day => {
+                // Ici, on compare tout en minuscules pour être sûr
                 const isOrange = orangeDays.includes(day.toLowerCase());
                 const isGreen = greenDays.includes(day.toLowerCase()) && !isOrange;
 
