@@ -42,11 +42,10 @@ export default function Home() {
   
   const router = useRouter();
 
-  // --- RÉCUPÉRATION DES STATUTS (FIX: SANS LA COLONNE TIME) ---
+  // --- RÉCUPÉRATION DES STATUTS (LOGIQUE DE COULEUR AMÉLIORÉE) ---
   const fetchModifications = async (binomeId: string, weekId: string) => {
     if (!binomeId || binomeId === "null") return;
 
-    // On ne demande que day_name et status qui existent bien en base
     const { data, error } = await supabase
       .from('submissions')
       .select('day_name, status') 
@@ -69,18 +68,20 @@ export default function Home() {
         );
 
         if (dayEntries.length > 0) {
-          // Si une ligne est orange ou rouge -> bouton orange
-          const hasAlert = dayEntries.some(e => {
-            const s = e.status?.toLowerCase();
-            return s === 'orange' || s === 'rouge';
-          });
+          // On normalise les statuts pour la comparaison
+          const statuses = dayEntries.map(e => e.status?.trim().toLowerCase());
+
+          // RÈGLE 1 : Si un seul cours est Orange ou Rouge -> Journée Orange
+          const hasAlert = statuses.some(s => s === 'orange' || s === 'rouge');
 
           if (hasAlert) {
             oranges.push(day);
           } else {
-            // Sinon si une ligne est verte -> bouton vert
-            const hasGreen = dayEntries.some(e => e.status?.toLowerCase() === 'vert');
-            if (hasGreen) greens.push(day);
+            // RÈGLE 2 : Si pas d'alerte ET au moins un cours est Vert -> Journée Verte
+            const hasGreen = statuses.some(s => s === 'vert');
+            if (hasGreen) {
+              greens.push(day);
+            }
           }
         }
       });
@@ -114,7 +115,7 @@ export default function Home() {
     checkUser();
   }, [router]);
 
-  // --- SURVEILLANCE ---
+  // --- SURVEILLANCE DES CHANGEMENTS ---
   useEffect(() => {
     if (selectedBinomeId) {
       fetchModifications(selectedBinomeId, currentWeekId);
