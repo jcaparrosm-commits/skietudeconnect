@@ -13,8 +13,8 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   
   const mediaRecorder = useRef<MediaRecorder | null>(null);
 
-  // ID UNIQUE : SEMAINE + PLANNING + JOUR + HEURE
-  const slotId = `${currentWeek}-${profile.linked_planning}-${day}-${slot.time}`;
+  // ID UNIQUE : SEMAINE + PLANNING + JOUR + HEURE (Sécurisé avec ?)
+  const slotId = `${currentWeek}-${profile?.linked_planning || 'standard'}-${day}-${slot.time}`;
 
   const statusStyles: any = {
     gris: { border: 'border-gray-200', bg: 'bg-gray-100', text: 'text-gray-500' },
@@ -40,8 +40,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     if (data) {
       setSubmissions(data);
       if (data.length > 0) {
-        const lastStatus = data[0].status;
-        setStatus(lastStatus || 'gris');
+        setStatus(data[0].status || 'gris');
       } else {
         setStatus('gris');
       }
@@ -78,45 +77,59 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   const sendLink = async () => {
     if (!linkInput.trim()) return;
     setLoading(true);
-    // On s'assure que le lien commence par http si l'utilisateur l'oublie
     let url = linkInput.trim();
-    if (!url.startsWith('http')) {
-      url = 'https://' + url;
-    }
+    if (!url.startsWith('http')) url = 'https://' + url;
     await saveSubmission({ link_url: url, comment: "🔗 Lien ajouté" });
     setLinkInput("");
     setLoading(false);
   };
 
-  const uploadPhoto = async (event: any) => {
+  // NOUVEAU : GESTION MULTI-FICHIERS (PHOTO OU DOCUMENT)
+  const handleFileUpload = async (event: any) => {
     const file = event.target.files[0];
     if (!file) return;
     setLoading(true);
     try {
-      const fileName = `${Date.now()}-${file.name}`;
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
       const { error: upErr } = await supabase.storage.from('cours-documents').upload(fileName, file);
       if (upErr) throw upErr;
+
       const { data: { publicUrl } } = supabase.storage.from('cours-documents').getPublicUrl(fileName);
-      await saveSubmission({ file_url: publicUrl });
+      
+      const isImage = file.name.match(/\.(jpeg|jpg|gif|png)$/i);
+      await saveSubmission({ 
+        file_url: publicUrl, 
+        comment: isImage ? "" : `📄 Doc: ${file.name}` 
+      });
     } catch (err: any) {
-      alert("Erreur photo : " + err.message);
+      alert("Erreur upload : " + err.message);
     } finally {
       setLoading(false);
     }
   };
 
+  // CORRECTIF AUDIO : MULTI-PLATEFORME (iOS/Android)
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder.current = new MediaRecorder(stream);
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+      
+      mediaRecorder.current = new MediaRecorder(stream, { mimeType });
       const chunks: Blob[] = [];
-      mediaRecorder.current.ondataavailable = (e) => chunks.push(e.data);
+      
+      mediaRecorder.current.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+
       mediaRecorder.current.onstop = async () => {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-        const fileName = `audio-${Date.now()}.webm`;
+        const extension = mimeType.includes('webm') ? 'webm' : 'm4a';
+        const blob = new Blob(chunks, { type: mimeType });
+        const fileName = `audio-${Date.now()}.${extension}`;
+        
         setLoading(true);
         try {
-          const { error: upErr } = await supabase.storage.from('cours-documents').upload(fileName, blob);
+          const { error: upErr } = await supabase.storage.from('cours-documents').upload(fileName, blob, { contentType: mimeType });
           if (upErr) throw upErr;
           const { data: { publicUrl } } = supabase.storage.from('cours-documents').getPublicUrl(fileName);
           await saveSubmission({ audio_url: publicUrl });
@@ -125,11 +138,13 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         } finally {
           setLoading(false);
           setIsRecording(false);
+          stream.getTracks().forEach(track => track.stop());
         }
       };
+      
       mediaRecorder.current.start();
       setIsRecording(true);
-    } catch (err) { alert("Micro bloqué"); }
+    } catch (err) { alert("Micro bloqué ou non supporté"); }
   };
 
   const updateStatus = async (newStat: string) => {
@@ -143,7 +158,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   };
 
   return (
-    <div className={`bg-white rounded-3xl shadow-md border-l-[10px] flex flex-col h-full min-h-[280px] overflow-hidden transition-all duration-500 ${statusStyles[status].border}`}>
+    <div className={`bg-white rounded-3xl shadow-md border-l-[10px] flex flex-col h-full min-h-[300px] overflow-hidden transition-all duration-500 ${statusStyles[status].border}`}>
       
       {zoomedImage && (
         <div className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center p-4" onClick={() => setZoomedImage(null)}>
@@ -159,7 +174,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         </span>
       </div>
 
-      {/* HISTORIQUE DES MESSAGES */}
+      {/* HISTORIQUE / SUBMISSIONS MAP */}
       <div className="p-2 flex-1 overflow-y-auto space-y-2 bg-[#F9FAFB]">
         {submissions.map((s) => (
           <div key={s.id} className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 relative group animate-in fade-in slide-in-from-bottom-2">
@@ -171,15 +186,33 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
             
             {s.comment && <p className="text-[9px] font-bold text-gray-800 uppercase italic leading-tight">{s.comment}</p>}
             
-            {/* BOUTON LIEN DANS LE MESSAGE */}
             {s.link_url && (
               <a href={s.link_url} target="_blank" rel="noopener noreferrer" className="mt-2 block w-full bg-blue-600 text-white text-center py-2 rounded-lg text-[8px] font-black uppercase italic tracking-widest hover:bg-blue-700 transition-all shadow-sm">
                 🔗 Ouvrir le lien
               </a>
             )}
 
-            {s.file_url && <img src={s.file_url} onClick={() => setZoomedImage(s.file_url)} className="w-full h-20 object-cover rounded-lg mt-1 cursor-zoom-in" />}
-            {s.audio_url && <audio src={s.audio_url} controls className="h-6 w-full mt-1" />}
+            {/* GESTION PHOTO ET DOCUMENTS */}
+            {s.file_url && (
+              <div className="mt-2 relative">
+                {s.file_url.match(/\.(jpeg|jpg|gif|png)$/i) ? (
+                  <div className="relative group">
+                    <img src={s.file_url} onClick={() => setZoomedImage(s.file_url)} className="w-full h-32 object-cover rounded-xl cursor-zoom-in" />
+                    <a href={s.file_url} target="_blank" download className="absolute bottom-2 right-2 bg-white/90 p-2 rounded-lg shadow-md flex items-center gap-1 active:scale-95 transition-all">
+                      <span className="text-[10px]">📥</span>
+                      <span className="text-[7px] font-black uppercase text-blue-600">Enregistrer</span>
+                    </a>
+                  </div>
+                ) : (
+                  <a href={s.file_url} target="_blank" download className="flex items-center gap-2 bg-blue-50 p-2 rounded-lg border border-blue-100 hover:bg-blue-100 transition-all">
+                    <span className="text-xl">📄</span>
+                    <span className="text-[8px] font-black text-blue-700 uppercase italic">Télécharger le document</span>
+                  </a>
+                )}
+              </div>
+            )}
+
+            {s.audio_url && <audio src={s.audio_url} controls className="h-7 w-full mt-1" />}
           </div>
         ))}
         {submissions.length === 0 && <p className="text-[8px] text-gray-300 italic text-center mt-10 uppercase font-black">Disponible</p>}
@@ -189,33 +222,20 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
       <div className="p-2 bg-white border-t space-y-1.5">
         {status !== 'vert' ? (
           <>
-            {/* Input Note Texte */}
             <div className="flex gap-1">
-              <input 
-                value={comment} 
-                onChange={(e) => setComment(e.target.value)} 
-                placeholder="NOTE..." 
-                className="flex-1 p-2 text-[10px] font-bold uppercase italic border rounded-xl bg-gray-50 outline-none focus:border-blue-300" 
-              />
-              <button onClick={sendText} disabled={!comment.trim() || loading} className="bg-blue-600 text-white px-3 rounded-xl font-black text-[9px] uppercase active:scale-95 transition-transform shadow-md">OK</button>
+              <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="NOTE..." className="flex-1 p-2 text-[10px] font-bold uppercase italic border rounded-xl bg-gray-50 outline-none" />
+              <button onClick={sendText} disabled={!comment.trim() || loading} className="bg-blue-600 text-white px-3 rounded-xl font-black text-[9px]">OK</button>
             </div>
 
-            {/* Input Lien Direct */}
             <div className="flex gap-1">
-              <input 
-                value={linkInput} 
-                onChange={(e) => setLinkInput(e.target.value)} 
-                placeholder="LIEN (HTTP...)" 
-                className="flex-1 p-2 text-[10px] font-bold uppercase italic border border-sky-100 rounded-xl bg-sky-50 outline-none focus:border-sky-400" 
-              />
-              <button onClick={sendLink} disabled={!linkInput.trim() || loading} className="bg-sky-500 text-white px-3 rounded-xl font-black text-[9px] uppercase active:scale-95 transition-transform shadow-md">🔗</button>
+              <input value={linkInput} onChange={(e) => setLinkInput(e.target.value)} placeholder="LIEN..." className="flex-1 p-2 text-[10px] font-bold uppercase italic border border-sky-100 rounded-xl bg-sky-50 outline-none" />
+              <button onClick={sendLink} disabled={!linkInput.trim() || loading} className="bg-sky-500 text-white px-3 rounded-xl font-black text-[9px]">🔗</button>
             </div>
 
-            {/* Boutons Actions (Photo, Micro, Status) */}
             <div className="grid grid-cols-3 gap-1">
-              <label className="bg-indigo-500 text-white p-2 rounded-xl text-[8px] font-[900] text-center cursor-pointer active:scale-95 transition-all uppercase italic shadow-sm">
-                {loading ? "..." : "📸"}
-                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={uploadPhoto} disabled={loading} />
+              <label className="bg-indigo-500 text-white p-2 rounded-xl text-[8px] font-[900] text-center cursor-pointer active:scale-95 uppercase italic shadow-sm flex items-center justify-center">
+                {loading ? "..." : "📎 JOINDRE"}
+                <input type="file" className="hidden" onChange={handleFileUpload} disabled={loading} />
               </label>
               
               <button 
@@ -225,9 +245,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
                 {isRecording ? "REC" : "🎤"}
               </button>
 
-              <button 
-                onClick={() => updateStatus(status === 'rouge' ? 'orange' : 'vert')} 
-                className={`${status === 'rouge' ? 'bg-orange-500' : 'bg-green-600'} text-white p-2 rounded-xl text-[8px] font-[900] uppercase italic active:scale-95 shadow-md`}>
+              <button onClick={() => updateStatus(status === 'rouge' ? 'orange' : 'vert')} className={`${status === 'rouge' ? 'bg-orange-500' : 'bg-green-600'} text-white p-2 rounded-xl text-[8px] font-[900] uppercase italic shadow-md`}>
                 {status === 'rouge' ? 'OUVRIR' : 'FINIR'}
               </button>
             </div>

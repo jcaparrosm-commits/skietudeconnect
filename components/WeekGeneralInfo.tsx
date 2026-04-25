@@ -2,36 +2,32 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
-// AJOUT : Réception de binomeId dans les props
-export default function WeekGeneralInfo({ currentWeek, day, binomeId }: any) {
+export default function WeekGeneralInfo({ currentWeek, day }: any) {
   const [infos, setInfos] = useState<any[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null); // Pour le zoom
 
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioChunks = useRef<Blob[]>([]);
 
   const fetchInfos = async () => {
-    // MODIFICATION : On vérifie qu'on a bien un binomeId avant de charger
-    if (!supabase || !currentWeek || !binomeId) return;
+    if (!supabase || !currentWeek) return;
     try {
       const { data, error } = await supabase
         .from('week_infos')
         .select('*')
         .eq('week_id', currentWeek)
         .eq('day_name', day || 'Général')
-        .eq('binome_id', binomeId) // FILTRE : Uniquement le binôme sélectionné
         .order('created_at', { ascending: true });
       if (error) throw error;
       setInfos(data || []);
     } catch (e) { console.error(e); }
   };
 
-  // AJOUT : On surveille binomeId pour rafraîchir quand on change d'élève
-  useEffect(() => { fetchInfos(); }, [currentWeek, day, binomeId]);
+  useEffect(() => { fetchInfos(); }, [currentWeek, day]);
 
   const uploadToDB = async (content: string, type: string) => {
     try {
@@ -40,8 +36,7 @@ export default function WeekGeneralInfo({ currentWeek, day, binomeId }: any) {
         day_name: day || 'Général',
         content: content,
         type: type,
-        status: 'sent',
-        binome_id: binomeId // ENREGISTREMENT : On lie la note au binôme
+        status: 'sent'
       });
       if (error) throw error;
       fetchInfos();
@@ -88,7 +83,7 @@ export default function WeekGeneralInfo({ currentWeek, day, binomeId }: any) {
   return (
     <div className="bg-blue-900 text-white rounded-[2.5rem] p-6 shadow-2xl flex flex-col border-4 border-blue-400 min-h-[450px] relative">
       <div className="mb-4">
-        <h2 className="text-xl font-black italic uppercase leading-none">Notes Générales</h2>
+        <h2 className="text-xl font-black italic uppercase leading-none italic">Notes Générales</h2>
         <span className="text-[10px] font-bold text-blue-300 uppercase tracking-widest">{day}</span>
       </div>
 
@@ -107,7 +102,6 @@ export default function WeekGeneralInfo({ currentWeek, day, binomeId }: any) {
             <button onClick={async () => { await supabase.from('week_infos').delete().eq('id', info.id); fetchInfos(); }} className="absolute -top-1 -right-1 bg-red-500 rounded-full w-5 h-5 text-[8px] opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
           </div>
         ))}
-        {infos.length === 0 && <p className="text-[8px] text-blue-300 italic text-center mt-10 uppercase font-black">Aucune note pour ce binôme</p>}
       </div>
 
       <div className="grid grid-cols-3 gap-2 mt-auto">
@@ -125,6 +119,7 @@ export default function WeekGeneralInfo({ currentWeek, day, binomeId }: any) {
         </form>
       )}
 
+      {/* MODAL ZOOM PHOTO */}
       {selectedPhoto && (
         <div className="fixed inset-0 z-[999] bg-black/95 flex items-center justify-center p-4" onClick={() => setSelectedPhoto(null)}>
           <img src={selectedPhoto} className="max-w-full max-h-full object-contain rounded-lg animate-in zoom-in duration-200" />
