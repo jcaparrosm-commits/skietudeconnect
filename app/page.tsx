@@ -27,7 +27,6 @@ const getWeekRangeLabel = (date: Date) => {
 };
 
 export default function Home() {
-  // --- ÉTATS ---
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [binomes, setBinomes] = useState<any[]>([]);
@@ -53,12 +52,12 @@ export default function Home() {
       .eq('week_id', weekId);
 
     if (!error && data) {
-      // Jours avec au moins un cours en cours (orange ou rouge)
+      // 1. On liste les jours qui ont au moins un orange ou rouge (Action requise)
       const oranges = data
         .filter(item => ['orange', 'rouge'].includes(item.status))
         .map(item => item.day_name);
       
-      // Jours avec des cours terminés
+      // 2. On liste les jours qui ont au moins un vert
       const greens = data
         .filter(item => item.status === 'vert')
         .map(item => item.day_name);
@@ -68,7 +67,6 @@ export default function Home() {
     }
   };
 
-  // --- AUTH ET CHARGEMENT PROFIL ---
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -96,7 +94,6 @@ export default function Home() {
     checkUser();
   }, [router]);
 
-  // --- SURVEILLANCE DES CHANGEMENTS ---
   useEffect(() => {
     if (selectedBinomeId) {
       fetchModifications(selectedBinomeId, currentWeekId);
@@ -129,27 +126,10 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            {profile?.role === 'admin' && binomes.length > 0 && (
-              <div className="hidden md:flex items-center gap-2 bg-blue-50 p-2 rounded-xl border border-blue-100">
-                <span className="text-[9px] font-black text-blue-600 uppercase ml-2">Voir l'élève :</span>
-                <select 
-                  value={selectedBinomeId || ""} 
-                  onChange={(e) => setSelectedBinomeId(e.target.value)}
-                  className="bg-transparent text-blue-900 font-bold text-xs outline-none cursor-pointer"
-                >
-                  {binomes.map(b => (
-                    <option key={b.id} value={b.id}>{b.nom_binome}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2">
-              <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2 px-4 rounded-xl font-black text-[10px] uppercase italic">💬 CHAT</button>
-              <button onClick={() => window.open('https://meet.google.com/new', '_blank')} className="bg-emerald-500 text-white p-2 px-4 rounded-xl font-black text-[10px] uppercase italic">📹 MEET</button>
-              <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="ml-2 text-[9px] font-black text-red-500 border-2 border-red-500 px-3 py-2 rounded-xl uppercase italic hover:bg-red-500 hover:text-white transition-all">Quitter</button>
-            </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2 px-4 rounded-xl font-black text-[10px] uppercase italic">💬 CHAT</button>
+            <button onClick={() => window.open('https://meet.google.com/new', '_blank')} className="bg-emerald-500 text-white p-2 px-4 rounded-xl font-black text-[10px] uppercase italic">📹 MEET</button>
+            <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="ml-2 text-[9px] font-black text-red-500 border-2 border-red-500 px-3 py-2 rounded-xl uppercase italic hover:bg-red-500 hover:text-white transition-all">Quitter</button>
           </div>
         </div>
       </header>
@@ -158,20 +138,14 @@ export default function Home() {
       <nav className="bg-white border-b sticky top-[82px] z-[90] mb-6">
         <div className="max-w-[1600px] mx-auto flex items-center justify-between px-6 py-4">
           <button onClick={() => changeWeek(-1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">← PRÉC.</button>
-          <div className="text-center">
-            <span className="font-[900] text-blue-600 uppercase italic text-[14px]">{getWeekRangeLabel(viewDate)}</span>
-          </div>
+          <span className="font-[900] text-blue-600 uppercase italic text-[14px]">{getWeekRangeLabel(viewDate)}</span>
           <button onClick={() => changeWeek(1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">SUIV. →</button>
         </div>
       </nav>
 
       <div className="max-w-[1600px] mx-auto p-4 flex flex-col lg:flex-row gap-6">
         <aside className="w-full lg:w-[400px] flex-shrink-0 lg:sticky lg:top-[168px] self-start">
-          <WeekGeneralInfo 
-            currentWeek={currentWeekId} 
-            day={selectedDay || "Général"} 
-            binomeId={selectedBinomeId} 
-          />
+          <WeekGeneralInfo currentWeek={currentWeekId} day={selectedDay || "Général"} binomeId={selectedBinomeId} />
         </aside>
 
         <section className="flex-1">
@@ -179,7 +153,6 @@ export default function Home() {
             <div className="space-y-4">
               {days.map(day => {
                 const isOrange = orangeDays.includes(day);
-                // Un jour est vert seulement s'il a du vert ET plus aucun orange
                 const isGreen = greenDays.includes(day) && !isOrange;
 
                 let cardStyle = "bg-white border-gray-200 hover:border-blue-600";
@@ -187,16 +160,19 @@ export default function Home() {
                 let dotColor = "bg-blue-600";
                 let label = null;
 
+                // LOGIQUE : ORANGE SI TRAVAIL EN COURS
                 if (isOrange) {
                   cardStyle = "bg-orange-50 border-orange-500 shadow-orange-100";
                   textColor = "text-orange-600";
                   dotColor = "bg-orange-500";
-                  label = <span className="bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic animate-pulse">Modifié</span>;
-                } else if (isGreen) {
+                  label = <span className="bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic animate-pulse">En cours</span>;
+                } 
+                // VERT SI AU MOINS UNE CASE FINIE ET AUCUNE ORANGE
+                else if (isGreen) {
                   cardStyle = "bg-green-50 border-green-500 shadow-green-100";
                   textColor = "text-green-600";
                   dotColor = "bg-green-500";
-                  label = <span className="bg-green-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic">Terminé ✓</span>;
+                  label = <span className="bg-green-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic">Validé ✓</span>;
                 }
 
                 return (
@@ -228,14 +204,7 @@ export default function Home() {
                   <div className="bg-blue-600 text-white p-5 rounded-[2rem] text-center font-[900] italic uppercase tracking-widest shadow-xl">☀️ MATIN</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {morningSlots.map(time => (
-                      <CourseCard 
-                        key={time} 
-                        slot={{ time }} 
-                        profile={profile} 
-                        currentWeek={currentWeekId} 
-                        day={selectedDay} 
-                        binomeId={selectedBinomeId}
-                      />
+                      <CourseCard key={time} slot={{ time }} profile={profile} currentWeek={currentWeekId} day={selectedDay} binomeId={selectedBinomeId} />
                     ))}
                   </div>
                 </div>
@@ -243,14 +212,7 @@ export default function Home() {
                   <div className="bg-blue-900 text-white p-5 rounded-[2rem] text-center font-[900] italic uppercase tracking-widest shadow-xl">🌙 APRÈS-MIDI</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {afternoonSlots.map(time => (
-                      <CourseCard 
-                        key={time} 
-                        slot={{ time }} 
-                        profile={profile} 
-                        currentWeek={currentWeekId} 
-                        day={selectedDay} 
-                        binomeId={selectedBinomeId}
-                      />
+                      <CourseCard key={time} slot={{ time }} profile={profile} currentWeek={currentWeekId} day={selectedDay} binomeId={selectedBinomeId} />
                     ))}
                   </div>
                 </div>
