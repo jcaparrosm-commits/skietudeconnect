@@ -27,7 +27,6 @@ const getWeekRangeLabel = (date: Date) => {
 };
 
 export default function Home() {
-  // --- ÉTATS ---
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [binomes, setBinomes] = useState<any[]>([]);
@@ -38,13 +37,12 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [isChatOpen, setIsChatOpen] = useState(false);
   
-  // États pour les couleurs des jours
   const [orangeDays, setOrangeDays] = useState<string[]>([]);
   const [greenDays, setGreenDays] = useState<string[]>([]);
   
   const router = useRouter();
 
-  // --- RÉCUPÉRATION DES STATUTS POUR LES COULEURS ---
+  // --- RÉCUPÉRATION DES STATUTS ---
   const fetchModifications = async (binomeId: string, weekId: string) => {
     const { data, error } = await supabase
       .from('submissions')
@@ -53,22 +51,20 @@ export default function Home() {
       .eq('week_id', weekId);
 
     if (!error && data) {
-      // Jours avec au moins un cours en cours (orange ou rouge)
+      // On force tout en minuscules pour comparer sans erreur
       const oranges = data
         .filter(item => ['orange', 'rouge'].includes(item.status))
-        .map(item => item.day_name);
+        .map(item => item.day_name.trim().toLowerCase());
       
-      // Jours avec des cours terminés
       const greens = data
         .filter(item => item.status === 'vert')
-        .map(item => item.day_name);
+        .map(item => item.day_name.trim().toLowerCase());
 
       setOrangeDays(Array.from(new Set(oranges)));
       setGreenDays(Array.from(new Set(greens)));
     }
   };
 
-  // --- AUTH ET CHARGEMENT PROFIL ---
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -80,15 +76,11 @@ export default function Home() {
       setProfile(userProfile);
 
       if (userProfile.role === 'admin') {
-        const { data: allBinomes } = await supabase.from('binomes').select('*');
+        const { data: allBinomes } = await supabase.from('binomes').select('*').order('nom_binome');
         setBinomes(allBinomes || []);
         if (allBinomes && allBinomes.length > 0) setSelectedBinomeId(allBinomes[0].id);
       } else {
-        const { data: myBinome } = await supabase
-          .from('binomes')
-          .select('id')
-          .or(`skieur_id.eq.${user.id},collaborateur_id.eq.${user.id}`)
-          .single();
+        const { data: myBinome } = await supabase.from('binomes').select('id').or(`skieur_id.eq.${user.id},collaborateur_id.eq.${user.id}`).single();
         if (myBinome) setSelectedBinomeId(myBinome.id);
       }
       setLoading(false);
@@ -96,7 +88,6 @@ export default function Home() {
     checkUser();
   }, [router]);
 
-  // --- SURVEILLANCE DES CHANGEMENTS ---
   useEffect(() => {
     if (selectedBinomeId) {
       fetchModifications(selectedBinomeId, currentWeekId);
@@ -118,69 +109,42 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#F0F2F5] pb-10">
-      {/* HEADER */}
       <header className="bg-white p-4 shadow-md border-b-[6px] border-blue-600 sticky top-0 z-[100]">
         <div className="max-w-[1600px] mx-auto flex justify-between items-center">
           <div className="flex flex-col">
             <h1 className="font-[900] text-blue-600 italic text-xl uppercase tracking-tighter leading-none">SKI ETUDE CONNECT</h1>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-[10px] font-black text-blue-900 uppercase italic tracking-widest">Utilisateur : {profile?.prenom}</span>
+              <span className="text-[10px] font-black text-blue-900 uppercase italic tracking-widest">{profile?.prenom}</span>
               {profile?.role === 'admin' && <span className="bg-red-500 text-white text-[8px] px-2 py-0.5 rounded-full font-black uppercase">ADMIN</span>}
             </div>
           </div>
-
-          <div className="flex items-center gap-4">
-            {profile?.role === 'admin' && binomes.length > 0 && (
-              <div className="hidden md:flex items-center gap-2 bg-blue-50 p-2 rounded-xl border border-blue-100">
-                <span className="text-[9px] font-black text-blue-600 uppercase ml-2">Voir l'élève :</span>
-                <select 
-                  value={selectedBinomeId || ""} 
-                  onChange={(e) => setSelectedBinomeId(e.target.value)}
-                  className="bg-transparent text-blue-900 font-bold text-xs outline-none cursor-pointer"
-                >
-                  {binomes.map(b => (
-                    <option key={b.id} value={b.id}>{b.nom_binome}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2">
-              <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2 px-4 rounded-xl font-black text-[10px] uppercase italic">💬 CHAT</button>
-              <button onClick={() => window.open('https://meet.google.com/new', '_blank')} className="bg-emerald-500 text-white p-2 px-4 rounded-xl font-black text-[10px] uppercase italic">📹 MEET</button>
-              <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="ml-2 text-[9px] font-black text-red-500 border-2 border-red-500 px-3 py-2 rounded-xl uppercase italic hover:bg-red-500 hover:text-white transition-all">Quitter</button>
-            </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2 px-4 rounded-xl font-black text-[10px] uppercase italic">💬 CHAT</button>
+            <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="ml-2 text-[9px] font-black text-red-500 border-2 border-red-500 px-3 py-2 rounded-xl uppercase italic">Quitter</button>
           </div>
         </div>
       </header>
 
-      {/* NAV SEMAINE */}
       <nav className="bg-white border-b sticky top-[82px] z-[90] mb-6">
         <div className="max-w-[1600px] mx-auto flex items-center justify-between px-6 py-4">
-          <button onClick={() => changeWeek(-1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">← PRÉC.</button>
-          <div className="text-center">
-            <span className="font-[900] text-blue-600 uppercase italic text-[14px]">{getWeekRangeLabel(viewDate)}</span>
-          </div>
-          <button onClick={() => changeWeek(1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">SUIV. →</button>
+          <button onClick={() => changeWeek(-1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">←</button>
+          <span className="font-[900] text-blue-600 uppercase italic text-[14px]">{getWeekRangeLabel(viewDate)}</span>
+          <button onClick={() => changeWeek(1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">→</button>
         </div>
       </nav>
 
       <div className="max-w-[1600px] mx-auto p-4 flex flex-col lg:flex-row gap-6">
         <aside className="w-full lg:w-[400px] flex-shrink-0 lg:sticky lg:top-[168px] self-start">
-          <WeekGeneralInfo 
-            currentWeek={currentWeekId} 
-            day={selectedDay || "Général"} 
-            binomeId={selectedBinomeId} 
-          />
+          <WeekGeneralInfo currentWeek={currentWeekId} day={selectedDay || "Général"} binomeId={selectedBinomeId} />
         </aside>
 
         <section className="flex-1">
           {!selectedDay ? (
             <div className="space-y-4">
               {days.map(day => {
-                const isOrange = orangeDays.includes(day);
-                // Un jour est vert seulement s'il a du vert ET plus aucun orange
-                const isGreen = greenDays.includes(day) && !isOrange;
+                // CORRECTION : On compare le jour de la liste avec les tableaux en minuscules
+                const isOrange = orangeDays.includes(day.toLowerCase());
+                const isGreen = greenDays.includes(day.toLowerCase()) && !isOrange;
 
                 let cardStyle = "bg-white border-gray-200 hover:border-blue-600";
                 let textColor = "text-blue-900 group-hover:text-blue-600";
@@ -200,20 +164,12 @@ export default function Home() {
                 }
 
                 return (
-                  <button 
-                    key={day} 
-                    onClick={() => setSelectedDay(day)} 
-                    className={`w-full p-10 rounded-[2.5rem] shadow-lg flex justify-between items-center border-b-[8px] transition-all group ${cardStyle}`}
-                  >
+                  <button key={day} onClick={() => setSelectedDay(day)} className={`w-full p-10 rounded-[2.5rem] shadow-lg flex justify-between items-center border-b-[8px] transition-all group ${cardStyle}`}>
                     <div className="flex items-center gap-4">
-                      <span className={`text-5xl font-[900] italic uppercase tracking-tighter transition-colors ${textColor}`}>
-                        {day}
-                      </span>
+                      <span className={`text-5xl font-[900] italic uppercase tracking-tighter transition-colors ${textColor}`}>{day}</span>
                       {label}
                     </div>
-                    <div className={`${dotColor} h-14 w-14 rounded-full flex items-center justify-center text-white text-3xl font-bold transition-transform group-hover:rotate-12`}>
-                      →
-                    </div>
+                    <div className={`${dotColor} h-14 w-14 rounded-full flex items-center justify-center text-white text-3xl font-bold transition-transform group-hover:rotate-12`}>→</div>
                   </button>
                 );
               })}
@@ -222,20 +178,12 @@ export default function Home() {
             <div className="animate-in fade-in duration-500">
               <button onClick={() => setSelectedDay(null)} className="mb-6 font-black italic uppercase text-[10px] bg-blue-900 text-white p-3 px-8 rounded-full shadow-xl">← RETOUR</button>
               <h2 className="text-6xl font-[900] italic uppercase text-blue-600 mb-10 tracking-tighter">{selectedDay}</h2>
-              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-5">
                   <div className="bg-blue-600 text-white p-5 rounded-[2rem] text-center font-[900] italic uppercase tracking-widest shadow-xl">☀️ MATIN</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {morningSlots.map(time => (
-                      <CourseCard 
-                        key={time} 
-                        slot={{ time }} 
-                        profile={profile} 
-                        currentWeek={currentWeekId} 
-                        day={selectedDay} 
-                        binomeId={selectedBinomeId}
-                      />
+                      <CourseCard key={time} slot={{ time }} profile={profile} currentWeek={currentWeekId} day={selectedDay} binomeId={selectedBinomeId} />
                     ))}
                   </div>
                 </div>
@@ -243,14 +191,7 @@ export default function Home() {
                   <div className="bg-blue-900 text-white p-5 rounded-[2rem] text-center font-[900] italic uppercase tracking-widest shadow-xl">🌙 APRÈS-MIDI</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {afternoonSlots.map(time => (
-                      <CourseCard 
-                        key={time} 
-                        slot={{ time }} 
-                        profile={profile} 
-                        currentWeek={currentWeekId} 
-                        day={selectedDay} 
-                        binomeId={selectedBinomeId}
-                      />
+                      <CourseCard key={time} slot={{ time }} profile={profile} currentWeek={currentWeekId} day={selectedDay} binomeId={selectedBinomeId} />
                     ))}
                   </div>
                 </div>
