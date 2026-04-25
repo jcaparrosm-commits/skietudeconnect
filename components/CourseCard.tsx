@@ -45,7 +45,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     if (data) {
       setSubmissions(data);
       if (data.length > 0) {
-        // On force le statut en minuscule pour la cohérence
         setStatus(data[0].status?.toLowerCase() || 'gris');
       } else {
         setStatus('gris');
@@ -54,13 +53,12 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   };
 
   const saveSubmission = async (payload: any) => {
-    // Si on n'a pas de statut dans le payload, on garde l'actuel ou on met rouge par défaut
     const newStatus = (payload.status || (status === 'gris' ? 'rouge' : status)).toLowerCase();
     
     try {
       const { error } = await supabase.from('submissions').insert([{ 
         course_name: slotId, 
-        day_name: day.toLowerCase().trim(), // Nettoyage pour la priorité sur la Home
+        day_name: day.toLowerCase().trim(),
         week_id: currentWeek,  
         status: newStatus, 
         author: profile?.prenom || 'Anonyme', 
@@ -156,9 +154,9 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     } catch (err) { alert("Micro inaccessible"); }
   };
 
+  // MISE À JOUR : On n'envoie plus de texte dans le commentaire
   const updateStatus = async (newStat: string) => {
-    const label = newStat === 'vert' ? "Cours Validé" : `Statut : ${newStat}`;
-    await saveSubmission({ comment: label, status: newStat.toLowerCase() });
+    await saveSubmission({ comment: "", status: newStat.toLowerCase() });
   };
 
   const deleteItem = async (id: string) => {
@@ -184,33 +182,40 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
       </div>
 
       <div className="p-2 flex-1 overflow-y-auto space-y-2 bg-[#F9FAFB]">
-        {submissions.map((s) => (
-          <div key={s.id} className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 relative group">
-            <button onClick={() => deleteItem(s.id)} className="absolute top-1 right-1 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
-            <div className="flex justify-between items-center mb-1 text-[7px] font-black text-blue-400 uppercase italic">
-              <span>{s.author}</span>
-              <span>{new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-            </div>
-            {s.comment && <p className="text-[9px] font-bold text-gray-800 uppercase italic leading-tight">{s.comment}</p>}
-            {s.link_url && (
-              <a href={s.link_url} target="_blank" rel="noopener noreferrer" className="mt-2 block w-full bg-blue-600 text-white text-center py-2 rounded-lg text-[8px] font-black uppercase italic">🔗 Ouvrir le lien</a>
-            )}
-            {s.file_url && (
-              <div className="mt-2">
-                {s.file_url.match(/\.(jpeg|jpg|gif|png)$/i) ? (
-                  <img src={s.file_url} onClick={() => setZoomedImage(s.file_url)} className="w-full h-32 object-cover rounded-xl cursor-zoom-in border" />
-                ) : (
-                  <a href={s.file_url} target="_blank" download className="flex items-center gap-2 bg-blue-50 p-2 rounded-lg border border-blue-100">
-                    <span className="text-xl">📄</span>
-                    <span className="text-[8px] font-black text-blue-700 uppercase italic">Document</span>
-                  </a>
-                )}
+        {submissions.map((s) => {
+          // FILTRE : Masquer les messages système de statut automatiques
+          if (s.comment?.includes("Statut :") || s.comment === "Cours Validé") return null;
+          
+          return (
+            <div key={s.id} className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 relative group">
+              <button onClick={() => deleteItem(s.id)} className="absolute top-1 right-1 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+              <div className="flex justify-between items-center mb-1 text-[7px] font-black text-blue-400 uppercase italic">
+                <span>{s.author}</span>
+                <span>{new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
-            )}
-            {s.audio_url && <audio src={s.audio_url} controls className="h-7 w-full mt-1" />}
-          </div>
-        ))}
-        {submissions.length === 0 && <p className="text-[8px] text-gray-300 italic text-center mt-10 uppercase font-black">Disponible</p>}
+              {s.comment && <p className="text-[9px] font-bold text-gray-800 uppercase italic leading-tight">{s.comment}</p>}
+              {s.link_url && (
+                <a href={s.link_url} target="_blank" rel="noopener noreferrer" className="mt-2 block w-full bg-blue-600 text-white text-center py-2 rounded-lg text-[8px] font-black uppercase italic">🔗 Ouvrir le lien</a>
+              )}
+              {s.file_url && (
+                <div className="mt-2">
+                  {s.file_url.match(/\.(jpeg|jpg|gif|png)$/i) ? (
+                    <img src={s.file_url} onClick={() => setZoomedImage(s.file_url)} className="w-full h-32 object-cover rounded-xl cursor-zoom-in border" />
+                  ) : (
+                    <a href={s.file_url} target="_blank" download className="flex items-center gap-2 bg-blue-50 p-2 rounded-lg border border-blue-100">
+                      <span className="text-xl">📄</span>
+                      <span className="text-[8px] font-black text-blue-700 uppercase italic">Document</span>
+                    </a>
+                  )}
+                </div>
+              )}
+              {s.audio_url && <audio src={s.audio_url} controls className="h-7 w-full mt-1" />}
+            </div>
+          );
+        })}
+        {submissions.filter(s => !s.comment?.includes("Statut :") && s.comment !== "Cours Validé").length === 0 && (
+          <p className="text-[8px] text-gray-300 italic text-center mt-10 uppercase font-black">Disponible</p>
+        )}
       </div>
 
       <div className="p-2 bg-white border-t space-y-1.5">
