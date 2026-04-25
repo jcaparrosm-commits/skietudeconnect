@@ -42,26 +42,45 @@ export default function Home() {
   
   const router = useRouter();
 
-  // --- RÉCUPÉRATION DES STATUTS ---
+  // --- RÉCUPÉRATION DES STATUTS (LOGIQUE DU DERNIER MESSAGE) ---
   const fetchModifications = async (binomeId: string, weekId: string) => {
     const { data, error } = await supabase
       .from('submissions')
-      .select('day_name, status')
+      .select('day_name, status, time, created_at')
       .eq('binome_id', binomeId)
-      .eq('week_id', weekId);
+      .eq('week_id', weekId)
+      .order('created_at', { ascending: false }); // Plus récent en premier
 
     if (!error && data) {
-      // On force tout en minuscules pour comparer sans erreur
-      const oranges = data
-        .filter(item => ['orange', 'rouge'].includes(item.status))
-        .map(item => item.day_name.trim().toLowerCase());
+      const latestStatusBySlot: any = {};
       
-      const greens = data
-        .filter(item => item.status === 'vert')
-        .map(item => item.day_name.trim().toLowerCase());
+      // On ne garde que le statut le plus récent pour chaque créneau
+      data.forEach(item => {
+        const cleanDay = item.day_name.trim().toLowerCase();
+        const slotKey = `${cleanDay}-${item.time}`;
+        if (!latestStatusBySlot[slotKey]) {
+          latestStatusBySlot[slotKey] = item.status;
+        }
+      });
 
-      setOrangeDays(Array.from(new Set(oranges)));
-      setGreenDays(Array.from(new Set(greens)));
+      const oranges: string[] = [];
+      const greens: string[] = [];
+      const daysList = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
+      
+      daysList.forEach(day => {
+        const slotsForDay = Object.keys(latestStatusBySlot)
+          .filter(key => key.startsWith(day))
+          .map(key => latestStatusBySlot[key]);
+
+        if (slotsForDay.some(s => s === 'orange' || s === 'rouge')) {
+          oranges.push(day);
+        } else if (slotsForDay.some(s => s === 'vert')) {
+          greens.push(day);
+        }
+      });
+
+      setOrangeDays(oranges);
+      setGreenDays(greens);
     }
   };
 
@@ -115,12 +134,17 @@ export default function Home() {
             <h1 className="font-[900] text-blue-600 italic text-xl uppercase tracking-tighter leading-none">SKI ETUDE CONNECT</h1>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-[10px] font-black text-blue-900 uppercase italic tracking-widest">{profile?.prenom}</span>
-              {profile?.role === 'admin' && <span className="bg-red-500 text-white text-[8px] px-2 py-0.5 rounded-full font-black uppercase">ADMIN</span>}
+              {profile?.role === 'admin' && <span className="bg-red-500 text-white text-[8px] px-2 py-0.5 rounded-full font-black uppercase ml-2">ADMIN</span>}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2 px-4 rounded-xl font-black text-[10px] uppercase italic">💬 CHAT</button>
-            <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="ml-2 text-[9px] font-black text-red-500 border-2 border-red-500 px-3 py-2 rounded-xl uppercase italic">Quitter</button>
+          <div className="flex items-center gap-4">
+            {profile?.role === 'admin' && (
+              <select value={selectedBinomeId || ""} onChange={(e) => setSelectedBinomeId(e.target.value)} className="bg-blue-50 text-blue-900 font-bold text-xs p-2 rounded-xl border border-blue-100 outline-none">
+                {binomes.map(b => <option key={b.id} value={b.id}>{b.nom_binome}</option>)}
+              </select>
+            )}
+            <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic hover:bg-blue-700 transition-colors">💬 CHAT</button>
+            <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="text-[9px] font-black text-red-500 border-2 border-red-500 px-3 py-2 rounded-xl uppercase italic hover:bg-red-500 hover:text-white transition-all">Quitter</button>
           </div>
         </div>
       </header>
@@ -128,7 +152,7 @@ export default function Home() {
       <nav className="bg-white border-b sticky top-[82px] z-[90] mb-6">
         <div className="max-w-[1600px] mx-auto flex items-center justify-between px-6 py-4">
           <button onClick={() => changeWeek(-1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">←</button>
-          <span className="font-[900] text-blue-600 uppercase italic text-[14px]">{getWeekRangeLabel(viewDate)}</span>
+          <span className="font-[900] text-blue-600 uppercase italic text-[14px] tracking-tight">{getWeekRangeLabel(viewDate)}</span>
           <button onClick={() => changeWeek(1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">→</button>
         </div>
       </nav>
@@ -142,7 +166,6 @@ export default function Home() {
           {!selectedDay ? (
             <div className="space-y-4">
               {days.map(day => {
-                // CORRECTION : On compare le jour de la liste avec les tableaux en minuscules
                 const isOrange = orangeDays.includes(day.toLowerCase());
                 const isGreen = greenDays.includes(day.toLowerCase()) && !isOrange;
 
@@ -166,10 +189,10 @@ export default function Home() {
                 return (
                   <button key={day} onClick={() => setSelectedDay(day)} className={`w-full p-10 rounded-[2.5rem] shadow-lg flex justify-between items-center border-b-[8px] transition-all group ${cardStyle}`}>
                     <div className="flex items-center gap-4">
-                      <span className={`text-5xl font-[900] italic uppercase tracking-tighter transition-colors ${textColor}`}>{day}</span>
+                      <span className={`text-4xl sm:text-5xl font-[900] italic uppercase tracking-tighter transition-colors ${textColor}`}>{day}</span>
                       {label}
                     </div>
-                    <div className={`${dotColor} h-14 w-14 rounded-full flex items-center justify-center text-white text-3xl font-bold transition-transform group-hover:rotate-12`}>→</div>
+                    <div className={`${dotColor} h-12 w-12 sm:h-14 sm:w-14 rounded-full flex items-center justify-center text-white text-3xl font-bold transition-transform group-hover:rotate-12`}>→</div>
                   </button>
                 );
               })}
@@ -177,7 +200,7 @@ export default function Home() {
           ) : (
             <div className="animate-in fade-in duration-500">
               <button onClick={() => setSelectedDay(null)} className="mb-6 font-black italic uppercase text-[10px] bg-blue-900 text-white p-3 px-8 rounded-full shadow-xl">← RETOUR</button>
-              <h2 className="text-6xl font-[900] italic uppercase text-blue-600 mb-10 tracking-tighter">{selectedDay}</h2>
+              <h2 className="text-5xl sm:text-6xl font-[900] italic uppercase text-blue-600 mb-10 tracking-tighter">{selectedDay}</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-5">
                   <div className="bg-blue-600 text-white p-5 rounded-[2rem] text-center font-[900] italic uppercase tracking-widest shadow-xl">☀️ MATIN</div>
