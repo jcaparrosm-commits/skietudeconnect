@@ -42,13 +42,13 @@ export default function Home() {
   
   const router = useRouter();
 
-  // --- RÉCUPÉRATION DES STATUTS DEPUIS SUPABASE ---
+  // --- RÉCUPÉRATION DES STATUTS (SANS LA COLONNE TIME) ---
   const fetchModifications = async (binomeId: string, weekId: string) => {
     if (!binomeId || binomeId === "null") return;
 
     const { data, error } = await supabase
       .from('submissions')
-      .select('day_name, status') 
+      .select('day_name, status') // Uniquement les colonnes existantes
       .eq('binome_id', binomeId)
       .eq('week_id', weekId);
 
@@ -68,17 +68,16 @@ export default function Home() {
         );
 
         if (dayEntries.length > 0) {
-          const statuses = dayEntries.map(e => e.status?.trim().toLowerCase());
+          const statuses = dayEntries.map(e => e.status ? e.status.trim().toLowerCase() : "");
 
-          // LOGIQUE DE PRIORITÉ INVERSÉE :
-          // On vérifie d'abord si le jour contient du VERT
-          const hasGreen = statuses.some(s => s === 'vert');
+          // --- LOGIQUE DE PRIORITÉ : VERT GAGNE ---
+          const hasGreen = statuses.includes('vert');
           const hasAlert = statuses.some(s => s === 'orange' || s === 'rouge');
 
           if (hasGreen) {
-            greens.push(day); // Le vert gagne
+            greens.push(day); // Si au moins une case est verte, le jour devient vert
           } else if (hasAlert) {
-            oranges.push(day); // L'orange n'apparaît que s'il n'y a pas de vert
+            oranges.push(day); // Sinon, s'il y a du orange/rouge, il devient orange
           }
         }
       });
@@ -88,19 +87,19 @@ export default function Home() {
     }
   };
 
-  // --- AUTHENTIFICATION ET PROFIL ---
+  // --- GESTION AUTH & PROFIL ---
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push('/login'); return; }
       setUser(user);
 
-      const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      const { data: prof } = await supabase.from('profiles').select('id, prenom, role, binome_id').eq('id', user.id).single();
       const userProfile = prof || { prenom: user.email?.split('@')[0], id: user.id, role: 'skieur' };
       setProfile(userProfile);
 
       if (userProfile.role === 'admin') {
-        const { data: allBinomes } = await supabase.from('binomes').select('*').order('nom_binome');
+        const { data: allBinomes } = await supabase.from('binomes').select('id, nom_binome').order('nom_binome');
         setBinomes(allBinomes || []);
         if (allBinomes && allBinomes.length > 0) setSelectedBinomeId(allBinomes[0].id);
       } else {
@@ -134,21 +133,18 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#F0F2F5] pb-10">
-      {/* HEADER FIXE */}
       <header className="bg-white p-4 shadow-md border-b-[6px] border-blue-600 sticky top-0 z-[100]">
         <div className="max-w-[1600px] mx-auto flex justify-between items-center">
           <div className="flex flex-col">
             <h1 className="font-[900] text-blue-600 italic text-xl uppercase tracking-tighter leading-none">SKI ETUDE CONNECT</h1>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-[10px] font-black text-blue-900 uppercase italic tracking-widest">{profile?.prenom}</span>
-              {profile?.role === 'admin' && <span className="bg-red-500 text-white text-[8px] px-2 py-0.5 rounded-full font-black uppercase ml-2">ADMIN</span>}
             </div>
           </div>
 
           <div className="flex items-center gap-3">
             {profile?.role === 'admin' && binomes.length > 0 && (
               <div className="flex items-center gap-2 bg-blue-50 p-2 px-3 rounded-xl border border-blue-100">
-                <span className="hidden sm:inline text-[9px] font-black text-blue-600 uppercase">Élève :</span>
                 <select 
                   value={selectedBinomeId || ""} 
                   onChange={(e) => setSelectedBinomeId(e.target.value)}
@@ -161,15 +157,13 @@ export default function Home() {
               </div>
             )}
             <div className="flex items-center gap-2">
-              <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic hover:bg-blue-700">💬 CHAT</button>
-              <button onClick={() => window.open('https://meet.google.com/new', '_blank')} className="bg-emerald-500 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic hover:bg-emerald-600">📹 MEET</button>
+              <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic">💬 CHAT</button>
               <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="text-[9px] font-black text-red-500 border-2 border-red-500 px-3 py-2 rounded-xl uppercase italic">Quitter</button>
             </div>
           </div>
         </div>
       </header>
 
-      {/* NAVIGATION SEMAINE */}
       <nav className="bg-white border-b sticky top-[82px] z-[90] mb-6">
         <div className="max-w-[1600px] mx-auto flex items-center justify-between px-6 py-4">
           <button onClick={() => changeWeek(-1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">←</button>
@@ -179,18 +173,16 @@ export default function Home() {
       </nav>
 
       <div className="max-w-[1600px] mx-auto p-4 flex flex-col lg:flex-row gap-6">
-        {/* BARRE LATÉRALE INFOS */}
         <aside className="w-full lg:w-[400px] flex-shrink-0 lg:sticky lg:top-[168px] self-start">
           <WeekGeneralInfo currentWeek={currentWeekId} day={selectedDay || "Général"} binomeId={selectedBinomeId} />
         </aside>
 
-        {/* CONTENU PRINCIPAL */}
         <section className="flex-1">
           {!selectedDay ? (
             <div className="space-y-4">
               {daysMenu.map(day => {
                 const isGreen = greenDays.includes(day);
-                const isOrange = orangeDays.includes(day) && !isGreen; // L'orange disparaît si vert présent
+                const isOrange = orangeDays.includes(day) && !isGreen; // Priorité au vert
 
                 let cardStyle = "bg-white border-gray-200 hover:border-blue-600";
                 let textColor = "text-blue-900 group-hover:text-blue-600";
@@ -198,12 +190,12 @@ export default function Home() {
                 let label = null;
 
                 if (isGreen) {
-                  cardStyle = "bg-green-50 border-green-500 shadow-green-100";
+                  cardStyle = "bg-green-50 border-green-500 shadow-green-100 shadow-sm";
                   textColor = "text-green-600";
                   dotColor = "bg-green-500";
                   label = <span className="bg-green-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic">Terminé ✓</span>;
                 } else if (isOrange) {
-                  cardStyle = "bg-orange-50 border-orange-500 shadow-orange-100";
+                  cardStyle = "bg-orange-50 border-orange-500 shadow-orange-100 shadow-sm";
                   textColor = "text-orange-600";
                   dotColor = "bg-orange-500";
                   label = <span className="bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic animate-pulse">Modifié</span>;

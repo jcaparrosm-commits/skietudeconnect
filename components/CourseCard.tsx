@@ -30,7 +30,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   }, [slotId, binomeId]);
 
   const fetchData = async () => {
-    // CORRECTION : On liste les colonnes explicitement pour éviter d'appeler 'time'
     const { data, error } = await supabase
       .from('submissions')
       .select('id, created_at, status, author, comment, link_url, file_url, audio_url, course_name, day_name, week_id')
@@ -46,7 +45,8 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     if (data) {
       setSubmissions(data);
       if (data.length > 0) {
-        setStatus(data[0].status || 'gris');
+        // On force le statut en minuscule pour la cohérence
+        setStatus(data[0].status?.toLowerCase() || 'gris');
       } else {
         setStatus('gris');
       }
@@ -54,11 +54,13 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   };
 
   const saveSubmission = async (payload: any) => {
-    const newStatus = payload.status || (status === 'gris' ? 'rouge' : status);
+    // Si on n'a pas de statut dans le payload, on garde l'actuel ou on met rouge par défaut
+    const newStatus = (payload.status || (status === 'gris' ? 'rouge' : status)).toLowerCase();
+    
     try {
       const { error } = await supabase.from('submissions').insert([{ 
         course_name: slotId, 
-        day_name: day,         
+        day_name: day.toLowerCase().trim(), // Nettoyage pour la priorité sur la Home
         week_id: currentWeek,  
         status: newStatus, 
         author: profile?.prenom || 'Anonyme', 
@@ -66,6 +68,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         binome_id: binomeId,
         ...payload 
       }]);
+      
       if (error) throw error;
       setStatus(newStatus);
       await fetchData();
@@ -77,7 +80,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   const sendText = async () => {
     if (!comment.trim()) return;
     setLoading(true);
-    await saveSubmission({ comment: comment });
+    await saveSubmission({ comment: comment.trim() });
     setComment("");
     setLoading(false);
   };
@@ -150,11 +153,12 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
       
       mediaRecorder.current.start();
       setIsRecording(true);
-    } catch (err) { alert("Micro inaccessible (vérifiez HTTPS)"); }
+    } catch (err) { alert("Micro inaccessible"); }
   };
 
   const updateStatus = async (newStat: string) => {
-    await saveSubmission({ comment: `Statut : ${newStat}`, status: newStat });
+    const label = newStat === 'vert' ? "Cours Validé" : `Statut : ${newStat}`;
+    await saveSubmission({ comment: label, status: newStat.toLowerCase() });
   };
 
   const deleteItem = async (id: string) => {
@@ -164,7 +168,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   };
 
   return (
-    <div className={`bg-white rounded-3xl shadow-md border-l-[10px] flex flex-col h-full min-h-[300px] overflow-hidden transition-all duration-500 ${statusStyles[status].border}`}>
+    <div className={`bg-white rounded-3xl shadow-md border-l-[10px] flex flex-col h-full min-h-[300px] overflow-hidden transition-all duration-500 ${statusStyles[status]?.border || 'border-gray-200'}`}>
       
       {zoomedImage && (
         <div className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center p-4" onClick={() => setZoomedImage(null)}>
@@ -174,50 +178,35 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
 
       <div className="p-3 border-b flex justify-between items-center bg-white">
         <span className="font-[900] italic text-xl text-blue-600 tracking-tighter">{slot.time}</span>
-        <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${statusStyles[status].bg} ${statusStyles[status].text}`}>
+        <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${statusStyles[status]?.bg} ${statusStyles[status]?.text}`}>
           ● {status}
         </span>
       </div>
 
       <div className="p-2 flex-1 overflow-y-auto space-y-2 bg-[#F9FAFB]">
         {submissions.map((s) => (
-          <div key={s.id} className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 relative group animate-in fade-in slide-in-from-bottom-2">
+          <div key={s.id} className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 relative group">
             <button onClick={() => deleteItem(s.id)} className="absolute top-1 right-1 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
             <div className="flex justify-between items-center mb-1 text-[7px] font-black text-blue-400 uppercase italic">
               <span>{s.author}</span>
               <span>{new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
             </div>
-            
             {s.comment && <p className="text-[9px] font-bold text-gray-800 uppercase italic leading-tight">{s.comment}</p>}
-            
             {s.link_url && (
-              <a href={s.link_url} target="_blank" rel="noopener noreferrer" className="mt-2 block w-full bg-blue-600 text-white text-center py-2 rounded-lg text-[8px] font-black uppercase italic shadow-sm">
-                🔗 Ouvrir le lien
-              </a>
+              <a href={s.link_url} target="_blank" rel="noopener noreferrer" className="mt-2 block w-full bg-blue-600 text-white text-center py-2 rounded-lg text-[8px] font-black uppercase italic">🔗 Ouvrir le lien</a>
             )}
-
             {s.file_url && (
               <div className="mt-2">
                 {s.file_url.match(/\.(jpeg|jpg|gif|png)$/i) ? (
-                  <div className="relative group">
-                    <img src={s.file_url} onClick={() => setZoomedImage(s.file_url)} className="w-full h-32 object-cover rounded-xl cursor-zoom-in border" />
-                    <a href={s.file_url} target="_blank" download className="absolute bottom-2 right-2 bg-white/90 p-2 rounded-lg shadow-md flex items-center gap-1 active:scale-95 transition-all">
-                      <span className="text-[10px]">📥</span>
-                      <span className="text-[7px] font-black uppercase text-blue-600">Enregistrer</span>
-                    </a>
-                  </div>
+                  <img src={s.file_url} onClick={() => setZoomedImage(s.file_url)} className="w-full h-32 object-cover rounded-xl cursor-zoom-in border" />
                 ) : (
-                  <a href={s.file_url} target="_blank" download className="flex items-center gap-2 bg-blue-50 p-2 rounded-lg border border-blue-100 hover:bg-blue-100 transition-all">
+                  <a href={s.file_url} target="_blank" download className="flex items-center gap-2 bg-blue-50 p-2 rounded-lg border border-blue-100">
                     <span className="text-xl">📄</span>
-                    <div className="flex flex-col">
-                        <span className="text-[8px] font-black text-blue-700 uppercase italic">Document joint</span>
-                        <span className="text-[6px] text-blue-400">Cliquez pour télécharger</span>
-                    </div>
+                    <span className="text-[8px] font-black text-blue-700 uppercase italic">Document</span>
                   </a>
                 )}
               </div>
             )}
-
             {s.audio_url && <audio src={s.audio_url} controls className="h-7 w-full mt-1" />}
           </div>
         ))}
@@ -238,7 +227,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
             </div>
 
             <div className="grid grid-cols-3 gap-1">
-              <label className="bg-indigo-500 text-white p-2 rounded-xl text-[8px] font-[900] text-center cursor-pointer active:scale-95 uppercase italic shadow-sm flex items-center justify-center">
+              <label className="bg-indigo-500 text-white p-2 rounded-xl text-[8px] font-[900] text-center cursor-pointer uppercase italic flex items-center justify-center">
                 {loading ? "..." : "📎 JOINDRE"}
                 <input type="file" className="hidden" onChange={handleFileUpload} disabled={loading} />
               </label>
@@ -246,11 +235,11 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
               <button 
                 onMouseDown={startRecording} onMouseUp={() => mediaRecorder.current?.stop()} 
                 onTouchStart={startRecording} onTouchEnd={() => mediaRecorder.current?.stop()}
-                className={`p-2 rounded-xl text-[8px] font-[900] transition-all active:scale-95 italic shadow-sm ${isRecording ? 'bg-red-500 animate-pulse text-white' : 'bg-gray-100 text-gray-700'}`}>
+                className={`p-2 rounded-xl text-[8px] font-[900] italic shadow-sm ${isRecording ? 'bg-red-500 animate-pulse text-white' : 'bg-gray-100 text-gray-700'}`}>
                 {isRecording ? "REC" : "🎤"}
               </button>
 
-              <button onClick={() => updateStatus(status === 'rouge' ? 'orange' : 'vert')} className={`${status === 'rouge' ? 'bg-orange-500' : 'bg-green-600'} text-white p-2 rounded-xl text-[8px] font-[900] uppercase italic active:scale-95 shadow-md`}>
+              <button onClick={() => updateStatus(status === 'rouge' ? 'orange' : 'vert')} className={`${status === 'rouge' ? 'bg-orange-500' : 'bg-green-600'} text-white p-2 rounded-xl text-[8px] font-[900] uppercase italic shadow-md`}>
                 {status === 'rouge' ? 'OUVRIR' : 'FINIR'}
               </button>
             </div>
