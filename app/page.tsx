@@ -38,54 +38,37 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [isChatOpen, setIsChatOpen] = useState(false);
   
+  // États pour les couleurs des jours
   const [orangeDays, setOrangeDays] = useState<string[]>([]);
   const [greenDays, setGreenDays] = useState<string[]>([]);
   
   const router = useRouter();
 
-  // --- RÉCUPÉRATION DES STATUTS (LOGIQUE ROBUSTE) ---
+  // --- RÉCUPÉRATION DES STATUTS POUR LES COULEURS ---
   const fetchModifications = async (binomeId: string, weekId: string) => {
     const { data, error } = await supabase
       .from('submissions')
-      .select('day_name, status, time, created_at')
+      .select('day_name, status')
       .eq('binome_id', binomeId)
-      .eq('week_id', weekId)
-      .order('created_at', { ascending: false });
+      .eq('week_id', weekId);
 
     if (!error && data) {
-      const latestStatusBySlot: any = {};
+      // Jours avec au moins un cours en cours (orange ou rouge)
+      const oranges = data
+        .filter(item => ['orange', 'rouge'].includes(item.status))
+        .map(item => item.day_name);
       
-      data.forEach(item => {
-        // CORRECTION ICI : .toLowerCase() pour ignorer la majuscule de Supabase
-        const cleanDay = item.day_name.trim().toLowerCase();
-        const slotKey = `${cleanDay}-${item.time}`;
-        if (!latestStatusBySlot[slotKey]) {
-          latestStatusBySlot[slotKey] = item.status;
-        }
-      });
+      // Jours avec des cours terminés
+      const greens = data
+        .filter(item => item.status === 'vert')
+        .map(item => item.day_name);
 
-      const oranges: string[] = [];
-      const greens: string[] = [];
-      // CORRECTION ICI : Liste en minuscules
-      const daysList = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
-      
-      daysList.forEach(day => {
-        const slotsForDay = Object.keys(latestStatusBySlot).filter(key => key.startsWith(day));
-        const statuses = slotsForDay.map(key => latestStatusBySlot[key]);
-
-        if (statuses.some(s => s === 'orange' || s === 'rouge')) {
-          oranges.push(day);
-        } else if (statuses.some(s => s === 'vert')) {
-          greens.push(day);
-        }
-      });
-
-      setOrangeDays(oranges);
-      setGreenDays(greens);
+      setOrangeDays(Array.from(new Set(oranges)));
+      setGreenDays(Array.from(new Set(greens)));
     }
   };
 
-  // --- AUTH ET PROFIL ---
+  // --- AUTH ET CHARGEMENT PROFIL ---
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -97,7 +80,7 @@ export default function Home() {
       setProfile(userProfile);
 
       if (userProfile.role === 'admin') {
-        const { data: allBinomes } = await supabase.from('binomes').select('*').order('nom_binome');
+        const { data: allBinomes } = await supabase.from('binomes').select('*');
         setBinomes(allBinomes || []);
         if (allBinomes && allBinomes.length > 0) setSelectedBinomeId(allBinomes[0].id);
       } else {
@@ -113,6 +96,7 @@ export default function Home() {
     checkUser();
   }, [router]);
 
+  // --- SURVEILLANCE DES CHANGEMENTS ---
   useEffect(() => {
     if (selectedBinomeId) {
       fetchModifications(selectedBinomeId, currentWeekId);
@@ -128,28 +112,27 @@ export default function Home() {
 
   if (loading) return <div className="h-screen flex items-center justify-center bg-[#F0F2F5] font-black text-blue-600 italic text-2xl uppercase">Chargement...</div>;
 
-  // CORRECTION ICI : Liste de boutons en minuscules
-  const days = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
+  const days = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
   const morningSlots = ["08:30", "09:30", "10:30", "11:30", "12:30"];
   const afternoonSlots = ["13:30", "14:30", "15:30", "16:30"];
 
   return (
     <main className="min-h-screen bg-[#F0F2F5] pb-10">
-      {/* HEADER AVEC SÉLECTEUR ADMIN */}
+      {/* HEADER */}
       <header className="bg-white p-4 shadow-md border-b-[6px] border-blue-600 sticky top-0 z-[100]">
         <div className="max-w-[1600px] mx-auto flex justify-between items-center">
           <div className="flex flex-col">
             <h1 className="font-[900] text-blue-600 italic text-xl uppercase tracking-tighter leading-none">SKI ETUDE CONNECT</h1>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-[10px] font-black text-blue-900 uppercase italic tracking-widest">{profile?.prenom}</span>
+              <span className="text-[10px] font-black text-blue-900 uppercase italic tracking-widest">Utilisateur : {profile?.prenom}</span>
               {profile?.role === 'admin' && <span className="bg-red-500 text-white text-[8px] px-2 py-0.5 rounded-full font-black uppercase">ADMIN</span>}
             </div>
           </div>
 
           <div className="flex items-center gap-4">
             {profile?.role === 'admin' && binomes.length > 0 && (
-              <div className="flex items-center gap-2 bg-blue-50 p-2 px-3 rounded-xl border border-blue-100">
-                <span className="hidden md:inline text-[9px] font-black text-blue-600 uppercase">Élève :</span>
+              <div className="hidden md:flex items-center gap-2 bg-blue-50 p-2 rounded-xl border border-blue-100">
+                <span className="text-[9px] font-black text-blue-600 uppercase ml-2">Voir l'élève :</span>
                 <select 
                   value={selectedBinomeId || ""} 
                   onChange={(e) => setSelectedBinomeId(e.target.value)}
@@ -163,13 +146,9 @@ export default function Home() {
             )}
 
             <div className="flex items-center gap-2">
-              <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic shadow-sm hover:bg-blue-700 transition-colors">
-                💬 <span className="hidden sm:inline ml-1">CHAT</span>
-              </button>
-              <button onClick={() => window.open('https://meet.google.com/new', '_blank')} className="bg-emerald-500 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic shadow-sm hover:bg-emerald-600 transition-colors">
-                📹 <span className="hidden sm:inline ml-1">MEET</span>
-              </button>
-              <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="ml-1 text-[9px] font-black text-red-500 border-2 border-red-500 px-3 py-2 rounded-xl uppercase italic hover:bg-red-500 hover:text-white transition-all">Quitter</button>
+              <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2 px-4 rounded-xl font-black text-[10px] uppercase italic">💬 CHAT</button>
+              <button onClick={() => window.open('https://meet.google.com/new', '_blank')} className="bg-emerald-500 text-white p-2 px-4 rounded-xl font-black text-[10px] uppercase italic">📹 MEET</button>
+              <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="ml-2 text-[9px] font-black text-red-500 border-2 border-red-500 px-3 py-2 rounded-xl uppercase italic hover:bg-red-500 hover:text-white transition-all">Quitter</button>
             </div>
           </div>
         </div>
@@ -178,15 +157,21 @@ export default function Home() {
       {/* NAV SEMAINE */}
       <nav className="bg-white border-b sticky top-[82px] z-[90] mb-6">
         <div className="max-w-[1600px] mx-auto flex items-center justify-between px-6 py-4">
-          <button onClick={() => changeWeek(-1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">←</button>
-          <span className="font-[900] text-blue-600 uppercase italic text-[14px]">{getWeekRangeLabel(viewDate)}</span>
-          <button onClick={() => changeWeek(1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">→</button>
+          <button onClick={() => changeWeek(-1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">← PRÉC.</button>
+          <div className="text-center">
+            <span className="font-[900] text-blue-600 uppercase italic text-[14px]">{getWeekRangeLabel(viewDate)}</span>
+          </div>
+          <button onClick={() => changeWeek(1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">SUIV. →</button>
         </div>
       </nav>
 
       <div className="max-w-[1600px] mx-auto p-4 flex flex-col lg:flex-row gap-6">
         <aside className="w-full lg:w-[400px] flex-shrink-0 lg:sticky lg:top-[168px] self-start">
-          <WeekGeneralInfo currentWeek={currentWeekId} day={selectedDay || "Général"} binomeId={selectedBinomeId} />
+          <WeekGeneralInfo 
+            currentWeek={currentWeekId} 
+            day={selectedDay || "Général"} 
+            binomeId={selectedBinomeId} 
+          />
         </aside>
 
         <section className="flex-1">
@@ -194,6 +179,7 @@ export default function Home() {
             <div className="space-y-4">
               {days.map(day => {
                 const isOrange = orangeDays.includes(day);
+                // Un jour est vert seulement s'il a du vert ET plus aucun orange
                 const isGreen = greenDays.includes(day) && !isOrange;
 
                 let cardStyle = "bg-white border-gray-200 hover:border-blue-600";
@@ -205,7 +191,7 @@ export default function Home() {
                   cardStyle = "bg-orange-50 border-orange-500 shadow-orange-100";
                   textColor = "text-orange-600";
                   dotColor = "bg-orange-500";
-                  label = <span className="bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic animate-pulse">En cours</span>;
+                  label = <span className="bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic animate-pulse">Modifié</span>;
                 } else if (isGreen) {
                   cardStyle = "bg-green-50 border-green-500 shadow-green-100";
                   textColor = "text-green-600";
@@ -220,10 +206,14 @@ export default function Home() {
                     className={`w-full p-10 rounded-[2.5rem] shadow-lg flex justify-between items-center border-b-[8px] transition-all group ${cardStyle}`}
                   >
                     <div className="flex items-center gap-4">
-                      <span className={`text-3xl sm:text-5xl font-[900] italic uppercase tracking-tighter transition-colors ${textColor}`}>{day}</span>
+                      <span className={`text-5xl font-[900] italic uppercase tracking-tighter transition-colors ${textColor}`}>
+                        {day}
+                      </span>
                       {label}
                     </div>
-                    <div className={`${dotColor} h-12 w-12 sm:h-14 sm:w-14 rounded-full flex items-center justify-center text-white text-3xl font-bold transition-transform group-hover:rotate-12`}>→</div>
+                    <div className={`${dotColor} h-14 w-14 rounded-full flex items-center justify-center text-white text-3xl font-bold transition-transform group-hover:rotate-12`}>
+                      →
+                    </div>
                   </button>
                 );
               })}
@@ -231,13 +221,21 @@ export default function Home() {
           ) : (
             <div className="animate-in fade-in duration-500">
               <button onClick={() => setSelectedDay(null)} className="mb-6 font-black italic uppercase text-[10px] bg-blue-900 text-white p-3 px-8 rounded-full shadow-xl">← RETOUR</button>
-              <h2 className="text-4xl sm:text-6xl font-[900] italic uppercase text-blue-600 mb-10 tracking-tighter">{selectedDay}</h2>
+              <h2 className="text-6xl font-[900] italic uppercase text-blue-600 mb-10 tracking-tighter">{selectedDay}</h2>
+              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-5">
                   <div className="bg-blue-600 text-white p-5 rounded-[2rem] text-center font-[900] italic uppercase tracking-widest shadow-xl">☀️ MATIN</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {morningSlots.map(time => (
-                      <CourseCard key={time} slot={{ time }} profile={profile} currentWeek={currentWeekId} day={selectedDay} binomeId={selectedBinomeId} />
+                      <CourseCard 
+                        key={time} 
+                        slot={{ time }} 
+                        profile={profile} 
+                        currentWeek={currentWeekId} 
+                        day={selectedDay} 
+                        binomeId={selectedBinomeId}
+                      />
                     ))}
                   </div>
                 </div>
@@ -245,7 +243,14 @@ export default function Home() {
                   <div className="bg-blue-900 text-white p-5 rounded-[2rem] text-center font-[900] italic uppercase tracking-widest shadow-xl">🌙 APRÈS-MIDI</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {afternoonSlots.map(time => (
-                      <CourseCard key={time} slot={{ time }} profile={profile} currentWeek={currentWeekId} day={selectedDay} binomeId={selectedBinomeId} />
+                      <CourseCard 
+                        key={time} 
+                        slot={{ time }} 
+                        profile={profile} 
+                        currentWeek={currentWeekId} 
+                        day={selectedDay} 
+                        binomeId={selectedBinomeId}
+                      />
                     ))}
                   </div>
                 </div>
