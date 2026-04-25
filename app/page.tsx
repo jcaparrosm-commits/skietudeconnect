@@ -42,26 +42,33 @@ export default function Home() {
   
   const router = useRouter();
 
-  // --- RÉCUPÉRATION DES STATUTS (LOGIQUE DU DERNIER MESSAGE) ---
+  // --- RÉCUPÉRATION DES STATUTS (LOGIQUE ROBUSTE) ---
   const fetchModifications = async (binomeId: string, weekId: string) => {
+    console.log("Fetching for:", binomeId, "Week:", weekId);
+    
     const { data, error } = await supabase
       .from('submissions')
-      .select('day_name, status, time, created_at')
+      .select('day_name, status, time, created_at, week_id')
       .eq('binome_id', binomeId)
-      .eq('week_id', weekId)
+      .eq('week_id', weekId) // Vérifie bien que la colonne week_id dans Supabase contient des valeurs comme "2026-W17"
       .order('created_at', { ascending: false });
 
-    if (!error && data) {
+    if (error) {
+      console.error("Erreur Supabase:", error);
+      return;
+    }
+
+    if (data) {
+      console.log("Données reçues:", data);
       const latestStatusBySlot: any = {};
       
       data.forEach(item => {
-        // On nettoie le jour reçu de Supabase (minuscules + retrait espaces)
+        // Normalisation : on enlève les espaces et on met en minuscules
         const cleanDay = item.day_name.trim().toLowerCase();
         const slotKey = `${cleanDay}-${item.time}`;
         
-        // On ne garde que la première occurrence (donc la plus récente grâce au tri)
         if (!latestStatusBySlot[slotKey]) {
-          latestStatusBySlot[slotKey] = item.status;
+          latestStatusBySlot[slotKey] = item.status.trim().toLowerCase();
         }
       });
 
@@ -74,7 +81,6 @@ export default function Home() {
           .filter(key => key.startsWith(day))
           .map(key => latestStatusBySlot[key]);
 
-        // Priorité à l'orange si au moins un créneau récent est orange/rouge
         if (slotsForDay.some(s => s === 'orange' || s === 'rouge')) {
           oranges.push(day);
         } else if (slotsForDay.some(s => s === 'vert')) {
@@ -125,7 +131,7 @@ export default function Home() {
 
   if (loading) return <div className="h-screen flex items-center justify-center bg-[#F0F2F5] font-black text-blue-600 italic text-2xl uppercase">Chargement...</div>;
 
-  const days = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
+  const daysMenu = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
   const morningSlots = ["08:30", "09:30", "10:30", "11:30", "12:30"];
   const afternoonSlots = ["13:30", "14:30", "15:30", "16:30"];
 
@@ -186,10 +192,9 @@ export default function Home() {
         <section className="flex-1">
           {!selectedDay ? (
             <div className="space-y-4">
-              {days.map(day => {
-                // Ici, on compare tout en minuscules pour être sûr
-                const isOrange = orangeDays.includes(day.toLowerCase());
-                const isGreen = greenDays.includes(day.toLowerCase()) && !isOrange;
+              {daysMenu.map(day => {
+                const isOrange = orangeDays.includes(day);
+                const isGreen = greenDays.includes(day) && !isOrange;
 
                 let cardStyle = "bg-white border-gray-200 hover:border-blue-600";
                 let textColor = "text-blue-900 group-hover:text-blue-600";
