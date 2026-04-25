@@ -27,6 +27,7 @@ const getWeekRangeLabel = (date: Date) => {
 };
 
 export default function Home() {
+  // --- ÉTATS ---
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [binomes, setBinomes] = useState<any[]>([]);
@@ -49,12 +50,11 @@ export default function Home() {
       .select('day_name, status, time, created_at')
       .eq('binome_id', binomeId)
       .eq('week_id', weekId)
-      .order('created_at', { ascending: false }); // Plus récent en premier
+      .order('created_at', { ascending: false });
 
     if (!error && data) {
       const latestStatusBySlot: any = {};
       
-      // On ne garde que le statut le plus récent pour chaque créneau
       data.forEach(item => {
         const cleanDay = item.day_name.trim().toLowerCase();
         const slotKey = `${cleanDay}-${item.time}`;
@@ -84,6 +84,7 @@ export default function Home() {
     }
   };
 
+  // --- AUTH ET PROFIL ---
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -128,6 +129,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#F0F2F5] pb-10">
+      {/* HEADER AVEC SÉLECTEUR ET MEET REPARÉS */}
       <header className="bg-white p-4 shadow-md border-b-[6px] border-blue-600 sticky top-0 z-[100]">
         <div className="max-w-[1600px] mx-auto flex justify-between items-center">
           <div className="flex flex-col">
@@ -137,22 +139,41 @@ export default function Home() {
               {profile?.role === 'admin' && <span className="bg-red-500 text-white text-[8px] px-2 py-0.5 rounded-full font-black uppercase ml-2">ADMIN</span>}
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            {profile?.role === 'admin' && (
-              <select value={selectedBinomeId || ""} onChange={(e) => setSelectedBinomeId(e.target.value)} className="bg-blue-50 text-blue-900 font-bold text-xs p-2 rounded-xl border border-blue-100 outline-none">
-                {binomes.map(b => <option key={b.id} value={b.id}>{b.nom_binome}</option>)}
-              </select>
+
+          <div className="flex items-center gap-3">
+            {profile?.role === 'admin' && binomes.length > 0 && (
+              <div className="flex items-center gap-2 bg-blue-50 p-2 px-3 rounded-xl border border-blue-100">
+                <span className="hidden sm:inline text-[9px] font-black text-blue-600 uppercase">Élève :</span>
+                <select 
+                  value={selectedBinomeId || ""} 
+                  onChange={(e) => setSelectedBinomeId(e.target.value)}
+                  className="bg-transparent text-blue-900 font-bold text-xs outline-none cursor-pointer"
+                >
+                  {binomes.map(b => (
+                    <option key={b.id} value={b.id}>{b.nom_binome}</option>
+                  ))}
+                </select>
+              </div>
             )}
-            <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic hover:bg-blue-700 transition-colors">💬 CHAT</button>
-            <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="text-[9px] font-black text-red-500 border-2 border-red-500 px-3 py-2 rounded-xl uppercase italic hover:bg-red-500 hover:text-white transition-all">Quitter</button>
+
+            <div className="flex items-center gap-2">
+              <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic shadow-sm hover:bg-blue-700 transition-colors">
+                💬 <span className="hidden sm:inline ml-1">CHAT</span>
+              </button>
+              <button onClick={() => window.open('https://meet.google.com/new', '_blank')} className="bg-emerald-500 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic shadow-sm hover:bg-emerald-600 transition-colors">
+                📹 <span className="hidden sm:inline ml-1">MEET</span>
+              </button>
+              <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="text-[9px] font-black text-red-500 border-2 border-red-500 px-3 py-2 rounded-xl uppercase italic hover:bg-red-500 hover:text-white transition-all">Quitter</button>
+            </div>
           </div>
         </div>
       </header>
 
+      {/* NAV SEMAINE */}
       <nav className="bg-white border-b sticky top-[82px] z-[90] mb-6">
         <div className="max-w-[1600px] mx-auto flex items-center justify-between px-6 py-4">
           <button onClick={() => changeWeek(-1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">←</button>
-          <span className="font-[900] text-blue-600 uppercase italic text-[14px] tracking-tight">{getWeekRangeLabel(viewDate)}</span>
+          <span className="font-[900] text-blue-600 uppercase italic text-[14px]">{getWeekRangeLabel(viewDate)}</span>
           <button onClick={() => changeWeek(1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">→</button>
         </div>
       </nav>
