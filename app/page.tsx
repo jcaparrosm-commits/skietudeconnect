@@ -123,7 +123,7 @@ export default function Home() {
 
   if (loading) return <div className="h-screen flex items-center justify-center bg-[#F0F2F5] font-black text-blue-600 italic text-2xl uppercase">Chargement...</div>;
 
-  const days = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
+  const days = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
   const morningSlots = ["08:30", "09:30", "10:30", "11:30", "12:30"];
   const afternoonSlots = ["13:30", "14:30", "15:30", "16:30"];
 
