@@ -37,23 +37,34 @@ export default function Home() {
   const [currentWeekId, setCurrentWeekId] = useState(getWeekIdentifier(new Date()));
   const [loading, setLoading] = useState(true);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [modifiedDays, setModifiedDays] = useState<string[]>([]); // Stocke les jours avec orange/rouge
+  
+  // États pour les couleurs des jours
+  const [orangeDays, setOrangeDays] = useState<string[]>([]);
+  const [greenDays, setGreenDays] = useState<string[]>([]);
+  
   const router = useRouter();
 
-  // --- LOGIQUE DE RÉCUPÉRATION DES MODIFICATIONS ---
+  // --- RÉCUPÉRATION DES STATUTS POUR LES COULEURS ---
   const fetchModifications = async (binomeId: string, weekId: string) => {
-    // On cherche les lignes dont le status est soit 'orange', soit 'rouge'
     const { data, error } = await supabase
       .from('submissions')
-      .select('day_name')
+      .select('day_name, status')
       .eq('binome_id', binomeId)
-      .eq('week_id', weekId)
-      .in('status', ['orange', 'rouge']); 
+      .eq('week_id', weekId);
 
     if (!error && data) {
-      // On extrait les noms de jours uniques (ex: ["Lundi", "Mercredi"])
-      const uniqueDays = Array.from(new Set(data.map(item => item.day_name)));
-      setModifiedDays(uniqueDays);
+      // Jours avec au moins un cours en cours (orange ou rouge)
+      const oranges = data
+        .filter(item => ['orange', 'rouge'].includes(item.status))
+        .map(item => item.day_name);
+      
+      // Jours avec des cours terminés
+      const greens = data
+        .filter(item => item.status === 'vert')
+        .map(item => item.day_name);
+
+      setOrangeDays(Array.from(new Set(oranges)));
+      setGreenDays(Array.from(new Set(greens)));
     }
   };
 
@@ -90,7 +101,7 @@ export default function Home() {
     if (selectedBinomeId) {
       fetchModifications(selectedBinomeId, currentWeekId);
     }
-  }, [selectedBinomeId, currentWeekId, selectedDay]); // On rafraîchit aussi quand on revient au menu (selectedDay null)
+  }, [selectedBinomeId, currentWeekId, selectedDay]);
 
   const changeWeek = (offset: number) => {
     const newDate = new Date(viewDate);
@@ -167,30 +178,40 @@ export default function Home() {
           {!selectedDay ? (
             <div className="space-y-4">
               {days.map(day => {
-                const isModified = modifiedDays.includes(day);
+                const isOrange = orangeDays.includes(day);
+                // Un jour est vert seulement s'il a du vert ET plus aucun orange
+                const isGreen = greenDays.includes(day) && !isOrange;
+
+                let cardStyle = "bg-white border-gray-200 hover:border-blue-600";
+                let textColor = "text-blue-900 group-hover:text-blue-600";
+                let dotColor = "bg-blue-600";
+                let label = null;
+
+                if (isOrange) {
+                  cardStyle = "bg-orange-50 border-orange-500 shadow-orange-100";
+                  textColor = "text-orange-600";
+                  dotColor = "bg-orange-500";
+                  label = <span className="bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic animate-pulse">Modifié</span>;
+                } else if (isGreen) {
+                  cardStyle = "bg-green-50 border-green-500 shadow-green-100";
+                  textColor = "text-green-600";
+                  dotColor = "bg-green-500";
+                  label = <span className="bg-green-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic">Terminé ✓</span>;
+                }
+
                 return (
                   <button 
                     key={day} 
                     onClick={() => setSelectedDay(day)} 
-                    className={`w-full p-10 rounded-[2.5rem] shadow-lg flex justify-between items-center border-b-[8px] transition-all group ${
-                      isModified 
-                      ? 'bg-orange-50 border-orange-500 shadow-orange-100' 
-                      : 'bg-white border-gray-200 hover:border-blue-600'
-                    }`}
+                    className={`w-full p-10 rounded-[2.5rem] shadow-lg flex justify-between items-center border-b-[8px] transition-all group ${cardStyle}`}
                   >
                     <div className="flex items-center gap-4">
-                      <span className={`text-5xl font-[900] italic uppercase tracking-tighter transition-colors ${
-                        isModified ? 'text-orange-600' : 'text-blue-900 group-hover:text-blue-600'
-                      }`}>
+                      <span className={`text-5xl font-[900] italic uppercase tracking-tighter transition-colors ${textColor}`}>
                         {day}
                       </span>
-                      {isModified && (
-                        <span className="bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic animate-pulse">
-                          Modifié
-                        </span>
-                      )}
+                      {label}
                     </div>
-                    <div className={`${isModified ? 'bg-orange-500' : 'bg-blue-600'} h-14 w-14 rounded-full flex items-center justify-center text-white text-3xl font-bold transition-transform group-hover:rotate-12`}>
+                    <div className={`${dotColor} h-14 w-14 rounded-full flex items-center justify-center text-white text-3xl font-bold transition-transform group-hover:rotate-12`}>
                       →
                     </div>
                   </button>
