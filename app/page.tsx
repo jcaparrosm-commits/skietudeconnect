@@ -42,28 +42,27 @@ export default function Home() {
   
   const router = useRouter();
 
-  // --- RÉCUPÉRATION DES STATUTS (LOGIQUE ROBUSTE) ---
+  // --- RÉCUPÉRATION DES STATUTS (SÉCURISÉE) ---
   const fetchModifications = async (binomeId: string, weekId: string) => {
-    console.log("Fetching for:", binomeId, "Week:", weekId);
-    
+    // SÉCURITÉ : On ne lance pas la requête si les IDs sont manquants
+    if (!binomeId || !weekId) return;
+
     const { data, error } = await supabase
       .from('submissions')
-      .select('day_name, status, time, created_at, week_id')
+      .select('day_name, status, time, created_at')
       .eq('binome_id', binomeId)
-      .eq('week_id', weekId) // Vérifie bien que la colonne week_id dans Supabase contient des valeurs comme "2026-W17"
+      .eq('week_id', weekId)
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error("Erreur Supabase:", error);
+      console.error("Erreur de requête Supabase:", error.message);
       return;
     }
 
     if (data) {
-      console.log("Données reçues:", data);
       const latestStatusBySlot: any = {};
       
       data.forEach(item => {
-        // Normalisation : on enlève les espaces et on met en minuscules
         const cleanDay = item.day_name.trim().toLowerCase();
         const slotKey = `${cleanDay}-${item.time}`;
         
@@ -93,6 +92,7 @@ export default function Home() {
     }
   };
 
+  // --- AUTH ET PROFIL ---
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -116,11 +116,12 @@ export default function Home() {
     checkUser();
   }, [router]);
 
+  // --- DÉCLENCHEMENT DU FETCH ---
   useEffect(() => {
-    if (selectedBinomeId) {
+    if (selectedBinomeId && currentWeekId) {
       fetchModifications(selectedBinomeId, currentWeekId);
     }
-  }, [selectedBinomeId, currentWeekId, selectedDay]);
+  }, [selectedBinomeId, currentWeekId]);
 
   const changeWeek = (offset: number) => {
     const newDate = new Date(viewDate);
