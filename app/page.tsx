@@ -6,7 +6,7 @@ import CourseCard from '@/components/CourseCard';
 import ChatModal from '@/components/ChatModal';
 import WeekGeneralInfo from '@/components/WeekGeneralInfo';
 
-// --- UTILITAIRES ---
+// --- UTILITAIRES DE DATE ---
 const getWeekIdentifier = (date: Date) => {
   const d = new Date(date.getTime());
   d.setHours(0, 0, 0, 0);
@@ -42,7 +42,7 @@ export default function Home() {
   
   const router = useRouter();
 
-  // --- RÉCUPÉRATION DES STATUTS (LOGIQUE DE COULEUR AMÉLIORÉE) ---
+  // --- RÉCUPÉRATION DES STATUTS DEPUIS SUPABASE ---
   const fetchModifications = async (binomeId: string, weekId: string) => {
     if (!binomeId || binomeId === "null") return;
 
@@ -68,20 +68,17 @@ export default function Home() {
         );
 
         if (dayEntries.length > 0) {
-          // On normalise les statuts pour la comparaison
           const statuses = dayEntries.map(e => e.status?.trim().toLowerCase());
 
-          // RÈGLE 1 : Si un seul cours est Orange ou Rouge -> Journée Orange
+          // LOGIQUE DE PRIORITÉ INVERSÉE :
+          // On vérifie d'abord si le jour contient du VERT
+          const hasGreen = statuses.some(s => s === 'vert');
           const hasAlert = statuses.some(s => s === 'orange' || s === 'rouge');
 
-          if (hasAlert) {
-            oranges.push(day);
-          } else {
-            // RÈGLE 2 : Si pas d'alerte ET au moins un cours est Vert -> Journée Verte
-            const hasGreen = statuses.some(s => s === 'vert');
-            if (hasGreen) {
-              greens.push(day);
-            }
+          if (hasGreen) {
+            greens.push(day); // Le vert gagne
+          } else if (hasAlert) {
+            oranges.push(day); // L'orange n'apparaît que s'il n'y a pas de vert
           }
         }
       });
@@ -91,7 +88,7 @@ export default function Home() {
     }
   };
 
-  // --- AUTH & PROFIL ---
+  // --- AUTHENTIFICATION ET PROFIL ---
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -115,7 +112,7 @@ export default function Home() {
     checkUser();
   }, [router]);
 
-  // --- SURVEILLANCE DES CHANGEMENTS ---
+  // --- MISE À JOUR AUTO DES COULEURS ---
   useEffect(() => {
     if (selectedBinomeId) {
       fetchModifications(selectedBinomeId, currentWeekId);
@@ -137,6 +134,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#F0F2F5] pb-10">
+      {/* HEADER FIXE */}
       <header className="bg-white p-4 shadow-md border-b-[6px] border-blue-600 sticky top-0 z-[100]">
         <div className="max-w-[1600px] mx-auto flex justify-between items-center">
           <div className="flex flex-col">
@@ -163,14 +161,15 @@ export default function Home() {
               </div>
             )}
             <div className="flex items-center gap-2">
-              <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic hover:bg-blue-700 transition-colors">💬 CHAT</button>
-              <button onClick={() => window.open('https://meet.google.com/new', '_blank')} className="bg-emerald-500 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic hover:bg-emerald-600 transition-colors">📹 MEET</button>
-              <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="text-[9px] font-black text-red-500 border-2 border-red-500 px-3 py-2 rounded-xl uppercase italic hover:bg-red-500 hover:text-white transition-all">Quitter</button>
+              <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic hover:bg-blue-700">💬 CHAT</button>
+              <button onClick={() => window.open('https://meet.google.com/new', '_blank')} className="bg-emerald-500 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic hover:bg-emerald-600">📹 MEET</button>
+              <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="text-[9px] font-black text-red-500 border-2 border-red-500 px-3 py-2 rounded-xl uppercase italic">Quitter</button>
             </div>
           </div>
         </div>
       </header>
 
+      {/* NAVIGATION SEMAINE */}
       <nav className="bg-white border-b sticky top-[82px] z-[90] mb-6">
         <div className="max-w-[1600px] mx-auto flex items-center justify-between px-6 py-4">
           <button onClick={() => changeWeek(-1)} className="font-black italic text-[10px] bg-gray-100 p-3 px-5 rounded-xl text-blue-600 uppercase">←</button>
@@ -180,32 +179,34 @@ export default function Home() {
       </nav>
 
       <div className="max-w-[1600px] mx-auto p-4 flex flex-col lg:flex-row gap-6">
+        {/* BARRE LATÉRALE INFOS */}
         <aside className="w-full lg:w-[400px] flex-shrink-0 lg:sticky lg:top-[168px] self-start">
           <WeekGeneralInfo currentWeek={currentWeekId} day={selectedDay || "Général"} binomeId={selectedBinomeId} />
         </aside>
 
+        {/* CONTENU PRINCIPAL */}
         <section className="flex-1">
           {!selectedDay ? (
             <div className="space-y-4">
               {daysMenu.map(day => {
-                const isOrange = orangeDays.includes(day);
-                const isGreen = greenDays.includes(day) && !isOrange;
+                const isGreen = greenDays.includes(day);
+                const isOrange = orangeDays.includes(day) && !isGreen; // L'orange disparaît si vert présent
 
                 let cardStyle = "bg-white border-gray-200 hover:border-blue-600";
                 let textColor = "text-blue-900 group-hover:text-blue-600";
                 let dotColor = "bg-blue-600";
                 let label = null;
 
-                if (isOrange) {
-                  cardStyle = "bg-orange-50 border-orange-500 shadow-orange-100 shadow-sm";
-                  textColor = "text-orange-600";
-                  dotColor = "bg-orange-500";
-                  label = <span className="bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic animate-pulse">Modifié</span>;
-                } else if (isGreen) {
-                  cardStyle = "bg-green-50 border-green-500 shadow-green-100 shadow-sm";
+                if (isGreen) {
+                  cardStyle = "bg-green-50 border-green-500 shadow-green-100";
                   textColor = "text-green-600";
                   dotColor = "bg-green-500";
                   label = <span className="bg-green-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic">Terminé ✓</span>;
+                } else if (isOrange) {
+                  cardStyle = "bg-orange-50 border-orange-500 shadow-orange-100";
+                  textColor = "text-orange-600";
+                  dotColor = "bg-orange-500";
+                  label = <span className="bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic animate-pulse">Modifié</span>;
                 }
 
                 return (
