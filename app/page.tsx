@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import CourseCard from '@/components/CourseCard';
 import ChatModal from '@/components/ChatModal';
 import WeekGeneralInfo from '@/components/WeekGeneralInfo';
-import NotificationModal from '@/components/NotificationModal'; // Import de la modale
+import NotificationModal from '@/components/NotificationModal';
 
 // --- UTILITAIRES ---
 const getWeekIdentifier = (date: Date) => {

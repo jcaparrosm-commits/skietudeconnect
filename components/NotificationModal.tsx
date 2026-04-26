@@ -20,7 +20,7 @@ export default function NotificationModal({ isOpen, onClose, notifications, onRe
     <div className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
         <div className="p-6 border-b flex justify-between items-center bg-blue-600 text-white">
-          <h2 className="font-black italic uppercase tracking-tighter">Notifications</h2>
+          <h2 className="font-black italic uppercase tracking-tighter">notifications</h2>
           <button onClick={markAllRead} className="text-[10px] font-black uppercase underline">Tout lire</button>
         </div>
         
