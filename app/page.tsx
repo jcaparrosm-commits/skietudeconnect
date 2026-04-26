@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import CourseCard from '@/components/CourseCard';
 import ChatModal from '@/components/ChatModal';
 import WeekGeneralInfo from '@/components/WeekGeneralInfo';
+import NotificationModal from '@/components/NotificationModal'; // Import de la modale
 
 // --- UTILITAIRES ---
 const getWeekIdentifier = (date: Date) => {
@@ -37,12 +38,39 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [isChatOpen, setIsChatOpen] = useState(false);
   
+  // --- ÉTATS NOTIFICATIONS ---
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+
   const [orangeDays, setOrangeDays] = useState<string[]>([]);
   const [greenDays, setGreenDays] = useState<string[]>([]);
   
   const router = useRouter();
 
-  // --- LOGIQUE DE CALCUL DES COULEURS (AVEC DÉTECTION DE COMMENTAIRE) ---
+  // --- LOGIQUE NOTIFICATIONS ---
+  const fetchNotifications = async () => {
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (!currentUser) return;
+    
+    const { data } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', currentUser.id)
+      .eq('is_read', false)
+      .order('created_at', { ascending: false });
+    
+    setNotifications(data || []);
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchNotifications();
+      const interval = setInterval(fetchNotifications, 30000); // Check toutes les 30s
+      return () => clearInterval(interval);
+    }
+  }, [user]);
+
+  // --- LOGIQUE DE CALCUL DES COULEURS ---
   const fetchModifications = async (binomeId: string, weekId: string) => {
     if (!binomeId || binomeId === "null") return;
 
@@ -67,41 +95,25 @@ export default function Home() {
 
         if (dayEntries.length > 0) {
           const lastStatusBySlot: any = {};
-          
           dayEntries.forEach((e: any) => {
-            // 1. On cherche d'abord dans la colonne status
             let s = e.status?.trim().toLowerCase() || "";
-            
-            // 2. Si status est vide, on cherche le mot-clé dans le commentaire
             if (!s || s === "") {
               const text = e.comment?.toLowerCase() || "";
               if (text.includes("Statut : vert")) s = "vert";
               else if (text.includes("Statut : orange")) s = "orange";
               else if (text.includes("Statut :rouge")) s = "rouge";
             }
-            
-            // On garde ce statut comme étant le dernier pour cette case
-            if (s) {
-              lastStatusBySlot[e.course_name] = s;
-            }
+            if (s) lastStatusBySlot[e.course_name] = s;
           });
 
           const finalStatuses = Object.values(lastStatusBySlot) as string[];
-
-          // RÈGLE : Si une seule case finit en orange ou rouge -> JOUR ORANGE
           const hasAlert = finalStatuses.some(s => s === 'orange' || s === 'rouge');
-          
-          // RÈGLE : Si toutes les cases avec activité finissent en vert -> JOUR VERT
           const allGreen = finalStatuses.length > 0 && finalStatuses.every(s => s === 'vert');
 
-          if (hasAlert) {
-            oranges.push(day);
-          } else if (allGreen) {
-            greens.push(day);
-          }
+          if (hasAlert) oranges.push(day);
+          else if (allGreen) greens.push(day);
         }
       });
-
       setOrangeDays(oranges);
       setGreenDays(greens);
     }
@@ -131,11 +143,8 @@ export default function Home() {
     checkUser();
   }, [router]);
 
-  // --- SURVEILLANCE DES CHANGEMENTS ---
   useEffect(() => {
-    if (selectedBinomeId) {
-      fetchModifications(selectedBinomeId, currentWeekId);
-    }
+    if (selectedBinomeId) fetchModifications(selectedBinomeId, currentWeekId);
   }, [selectedBinomeId, currentWeekId, selectedDay]);
 
   const changeWeek = (offset: number) => {
@@ -145,7 +154,7 @@ export default function Home() {
     setCurrentWeekId(getWeekIdentifier(newDate));
   };
 
-  if (loading) return <div className="h-screen flex items-center justify-center bg-[#F0F2F5] font-black text-blue-600 italic text-2xl uppercase text-center p-10">Chargement du Planning...</div>;
+  if (loading) return <div className="h-screen flex items-center justify-center bg-[#F0F2F5] font-black text-blue-600 italic text-2xl uppercase text-center p-10">Chargement...</div>;
 
   const daysMenu = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
   const morningSlots = ["08:30", "09:30", "10:30", "11:30", "12:30"];
@@ -166,22 +175,29 @@ export default function Home() {
           <div className="flex items-center gap-3">
             {profile?.role === 'admin' && binomes.length > 0 && (
               <div className="flex items-center gap-2 bg-blue-50 p-2 px-3 rounded-xl border border-blue-100">
-                <span className="hidden sm:inline text-[9px] font-black text-blue-600 uppercase">Élève :</span>
-                <select 
-                  value={selectedBinomeId || ""} 
-                  onChange={(e) => setSelectedBinomeId(e.target.value)}
-                  className="bg-transparent text-blue-900 font-bold text-xs outline-none cursor-pointer"
-                >
-                  {binomes.map(b => (
-                    <option key={b.id} value={b.id}>{b.nom_binome}</option>
-                  ))}
+                <select value={selectedBinomeId || ""} onChange={(e) => setSelectedBinomeId(e.target.value)} className="bg-transparent text-blue-900 font-bold text-xs outline-none">
+                  {binomes.map(b => <option key={b.id} value={b.id}>{b.nom_binome}</option>)}
                 </select>
               </div>
             )}
+            
             <div className="flex items-center gap-2">
+              {/* BOUTON CLOCHE NOTIFICATIONS */}
+              <button 
+                onClick={() => setIsNotifOpen(true)} 
+                className="relative bg-white border-2 border-blue-100 text-blue-600 p-2 rounded-xl hover:bg-blue-50 transition-all flex items-center justify-center min-w-[45px]"
+              >
+                <span className="text-xl">🔔</span>
+                {notifications.length > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-white font-black animate-pulse">
+                    {notifications.length}
+                  </span>
+                )}
+              </button>
+
               <button onClick={() => setIsChatOpen(true)} className="bg-blue-600 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic hover:bg-blue-700 transition-colors">💬 CHAT</button>
-              <button onClick={() => window.open('https://meet.google.com/new', '_blank')} className="bg-emerald-500 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic hover:bg-emerald-600 transition-colors">📹 MEET</button>
-              <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="text-[9px] font-black text-red-500 border-2 border-red-500 px-3 py-2 rounded-xl uppercase italic hover:bg-red-500 hover:text-white transition-all">Quitter</button>
+              <button onClick={() => window.open('https://meet.google.com/new', '_blank')} className="bg-emerald-500 text-white p-2.5 px-4 rounded-xl font-black text-[10px] uppercase italic hover:bg-emerald-600">📹 MEET</button>
+              <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))} className="text-[9px] font-black text-red-500 border-2 border-red-500 px-3 py-2 rounded-xl uppercase italic">Quitter</button>
             </div>
           </div>
         </div>
@@ -206,31 +222,17 @@ export default function Home() {
               {daysMenu.map(day => {
                 const isOrange = orangeDays.includes(day);
                 const isGreen = greenDays.includes(day) && !isOrange;
-
-                let cardStyle = "bg-white border-gray-200 hover:border-blue-600";
-                let textColor = "text-blue-900 group-hover:text-blue-600";
-                let dotColor = "bg-blue-600";
-                let label = null;
-
-                if (isOrange) {
-                  cardStyle = "bg-orange-50 border-orange-500 shadow-orange-100 shadow-sm";
-                  textColor = "text-orange-600";
-                  dotColor = "bg-orange-500";
-                  label = <span className="bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic animate-pulse">Modifié</span>;
-                } else if (isGreen) {
-                  cardStyle = "bg-green-50 border-green-500 shadow-green-100 shadow-sm";
-                  textColor = "text-green-600";
-                  dotColor = "bg-green-500";
-                  label = <span className="bg-green-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic">Terminé ✓</span>;
-                }
+                let cardStyle = isOrange ? "bg-orange-50 border-orange-500 shadow-orange-100" : isGreen ? "bg-green-50 border-green-500 shadow-green-100" : "bg-white border-gray-200 hover:border-blue-600";
+                let textColor = isOrange ? "text-orange-600" : isGreen ? "text-green-600" : "text-blue-900 group-hover:text-blue-600";
 
                 return (
                   <button key={day} onClick={() => setSelectedDay(day)} className={`w-full p-10 rounded-[2.5rem] shadow-lg flex justify-between items-center border-b-[8px] transition-all group ${cardStyle}`}>
                     <div className="flex items-center gap-4">
-                      <span className={`text-4xl sm:text-5xl font-[900] italic uppercase tracking-tighter transition-colors ${textColor}`}>{day}</span>
-                      {label}
+                      <span className={`text-4xl sm:text-5xl font-[900] italic uppercase tracking-tighter ${textColor}`}>{day}</span>
+                      {isOrange && <span className="bg-orange-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic animate-pulse">Modifié</span>}
+                      {isGreen && <span className="bg-green-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase italic">Terminé ✓</span>}
                     </div>
-                    <div className={`${dotColor} h-12 w-12 sm:h-14 sm:w-14 rounded-full flex items-center justify-center text-white text-3xl font-bold transition-transform group-hover:rotate-12`}>→</div>
+                    <div className="bg-blue-600 h-12 w-12 rounded-full flex items-center justify-center text-white text-3xl font-bold">→</div>
                   </button>
                 );
               })}
@@ -243,17 +245,13 @@ export default function Home() {
                 <div className="space-y-5">
                   <div className="bg-blue-600 text-white p-5 rounded-[2rem] text-center font-[900] italic uppercase tracking-widest shadow-xl">☀️ MATIN</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {morningSlots.map(time => (
-                      <CourseCard key={time} slot={{ time }} profile={profile} currentWeek={currentWeekId} day={selectedDay} binomeId={selectedBinomeId} />
-                    ))}
+                    {morningSlots.map(time => <CourseCard key={time} slot={{ time }} profile={profile} currentWeek={currentWeekId} day={selectedDay} binomeId={selectedBinomeId} />)}
                   </div>
                 </div>
                 <div className="space-y-5">
                   <div className="bg-blue-900 text-white p-5 rounded-[2rem] text-center font-[900] italic uppercase tracking-widest shadow-xl">🌙 APRÈS-MIDI</div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {afternoonSlots.map(time => (
-                      <CourseCard key={time} slot={{ time }} profile={profile} currentWeek={currentWeekId} day={selectedDay} binomeId={selectedBinomeId} />
-                    ))}
+                    {afternoonSlots.map(time => <CourseCard key={time} slot={{ time }} profile={profile} currentWeek={currentWeekId} day={selectedDay} binomeId={selectedBinomeId} />)}
                   </div>
                 </div>
               </div>
@@ -261,7 +259,15 @@ export default function Home() {
           )}
         </section>
       </div>
+      
+      {/* LES MODALES */}
       <ChatModal isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} profile={profile} />
+      <NotificationModal 
+        isOpen={isNotifOpen} 
+        onClose={() => setIsNotifOpen(false)} 
+        notifications={notifications}
+        onRefresh={fetchNotifications}
+      />
     </main>
   );
 }
