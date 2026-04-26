@@ -12,6 +12,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   
   const mediaRecorder = useRef<MediaRecorder | null>(null);
+  const audioStream = useRef<MediaStream | null>(null);
 
   const slotId = `${currentWeek}-${profile?.linked_planning || 'standard'}-${day}-${slot.time}`;
 
@@ -91,14 +92,12 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     setLoading(false);
   };
 
-  // --- VERSION OPTIMISÉE POUR IPHONE ---
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStream.current = stream;
       
-      // Détecter si c'est un iPhone (Safari) pour utiliser le bon format
       const mimeType = MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : 'audio/webm';
-      
       mediaRecorder.current = new MediaRecorder(stream, { mimeType });
       const chunks: Blob[] = [];
       
@@ -107,31 +106,39 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
       };
 
       mediaRecorder.current.onstop = async () => {
+        // CORRECTION IPHONE : On coupe le flux immédiatement
+        if (audioStream.current) {
+          audioStream.current.getTracks().forEach(track => track.stop());
+          audioStream.current = null;
+        }
+
         setLoading(true);
         try {
           const extension = mimeType.includes('mp4') ? 'm4a' : 'webm';
           const blob = new Blob(chunks, { type: mimeType });
           const fileName = `audio-${Date.now()}.${extension}`;
           
-          const { error: uploadError } = await supabase.storage.from('cours-documents').upload(fileName, blob);
-          if (uploadError) throw uploadError;
-
+          await supabase.storage.from('cours-documents').upload(fileName, blob);
           const { data: { publicUrl } } = supabase.storage.from('cours-documents').getPublicUrl(fileName);
           await performInsert('orange', "Note Vocale", { audio_url: publicUrl });
         } catch (err) {
-          console.error("Erreur iPhone Audio:", err);
+          console.error("Erreur audio:", err);
         } finally {
           setLoading(false);
           setIsRecording(false);
-          // Arrêter proprement toutes les pistes du micro
-          stream.getTracks().forEach(track => track.stop());
         }
       };
 
       mediaRecorder.current.start();
       setIsRecording(true);
     } catch (err) { 
-      alert("Micro bloqué. Vérifiez les réglages Safari (Réglages > Safari > Micro)"); 
+      alert("Micro inaccessible."); 
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorder.current && isRecording) {
+      mediaRecorder.current.stop();
     }
   };
 
@@ -156,6 +163,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         </div>
       )}
 
+      {/* Header */}
       <div className="p-3 border-b flex justify-between items-center bg-white">
         <span className="font-black italic text-xl text-blue-600">{slot.time}</span>
         <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${statusStyles[status]?.bg} ${statusStyles[status]?.text}`}>
@@ -163,6 +171,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         </span>
       </div>
 
+      {/* Messages */}
       <div className="p-2 flex-1 overflow-y-auto space-y-2 bg-gray-50">
         {submissions.map((s) => {
           const rawComment = s.comment || "";
@@ -186,7 +195,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
                 </p>
               )}
 
-              {s.link_url && <a href={s.link_url} target="_blank" className="mt-2 block w-full bg-blue-600 text-white text-center py-2 rounded-lg text-[8px] font-black uppercase italic">🔗 LIEN</a>}
+              {s.link_url && <a href={s.link_url} target="_blank" className="mt-2 block w-full bg-blue-600 text-white text-center py-2 rounded-lg text-[8px] font-black uppercase italic shadow-sm">🔗 LIEN</a>}
               
               {s.file_url && (
                 <div className="mt-2 flex flex-col gap-1.5">
@@ -206,6 +215,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         })}
       </div>
 
+      {/* Footer */}
       <div className="p-2 bg-white border-t space-y-2">
         {status !== 'vert' ? (
           <>
@@ -218,17 +228,12 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
                 {loading ? "..." : "📎"}
                 <input type="file" className="hidden" onChange={handleFileUpload} disabled={loading} />
               </label>
-              
-              {/* BOUTON AUDIO AVEC GESTION IPHONE */}
               <button 
-                onMouseDown={startRecording} 
-                onMouseUp={() => mediaRecorder.current?.stop()} 
-                onTouchStart={startRecording} 
-                onTouchEnd={() => mediaRecorder.current?.stop()} 
+                onMouseDown={startRecording} onMouseUp={stopRecording} 
+                onTouchStart={startRecording} onTouchEnd={stopRecording} 
                 className={`p-2 rounded-xl text-[9px] font-black italic ${isRecording ? 'bg-red-500 animate-pulse text-white' : 'bg-gray-100 text-gray-700'}`}>
-                {isRecording ? "REC" : loading ? "..." : "🎤"}
+                {isRecording ? "REC" : "🎤"}
               </button>
-
               <button onClick={() => updateStatus(status === 'rouge' ? 'orange' : 'vert')} className={`${status === 'rouge' ? 'bg-orange-500' : 'bg-green-600'} text-white p-2 rounded-xl text-[9px] font-black uppercase italic`}>
                 {status === 'rouge' ? 'OUVRIR' : 'FINIR'}
               </button>
