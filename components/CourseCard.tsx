@@ -10,6 +10,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   const [linkInput, setLinkInput] = useState(""); 
   const [isRecording, setIsRecording] = useState(false);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  
   const mediaRecorder = useRef<MediaRecorder | null>(null);
 
   const slotId = `${currentWeek}-${profile?.linked_planning || 'standard'}-${day}-${slot.time}`;
@@ -39,7 +40,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     }
   };
 
-  // --- ACTION RADICALE : INSERTION DIRECTE ---
   const performInsert = async (finalStatus: string, finalComment: string, extras = {}) => {
     try {
       const { error } = await supabase.from('submissions').insert({
@@ -50,7 +50,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         user_id: profile?.id || 'anonymous',
         author: profile?.prenom || 'Anonyme',
         status: finalStatus.toLowerCase(),
-        comment: finalComment, // ICI : On envoie la variable pure
+        comment: finalComment, 
         ...extras
       });
       if (error) throw error;
@@ -82,10 +82,12 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     const file = e.target.files[0];
     if (!file) return;
     setLoading(true);
-    const fileName = `${Date.now()}-${file.name}`;
-    await supabase.storage.from('cours-documents').upload(fileName, file);
-    const { data: { publicUrl } } = supabase.storage.from('cours-documents').getPublicUrl(fileName);
-    await performInsert('orange', `Fichier : ${file.name}`, { file_url: publicUrl });
+    try {
+      const fileName = `${Date.now()}-${file.name}`;
+      await supabase.storage.from('cours-documents').upload(fileName, file);
+      const { data: { publicUrl } } = supabase.storage.from('cours-documents').getPublicUrl(fileName);
+      await performInsert('orange', `Fichier : ${file.name}`, { file_url: publicUrl });
+    } catch (err) { alert("Erreur upload"); }
     setLoading(false);
   };
 
@@ -110,10 +112,8 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     } catch (err) { alert("Micro inaccessible"); }
   };
 
-  // --- BOUTON FINIR : STRICTEMENT AUCUN TEXTE "STATUT" ---
   const updateStatus = async (newColor: string) => {
     const color = newColor.toLowerCase().trim();
-    // On force l'envoi de la couleur pure dans les deux colonnes
     await performInsert(color, color); 
   };
 
@@ -129,10 +129,11 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
       
       {zoomedImage && (
         <div className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center p-4" onClick={() => setZoomedImage(null)}>
-          <img src={zoomedImage} className="max-w-full max-h-full object-contain" alt="Zoom" />
+          <img src={zoomedImage} className="max-w-full max-h-full object-contain rounded-lg" alt="Zoom" />
         </div>
       )}
 
+      {/* Header */}
       <div className="p-3 border-b flex justify-between items-center bg-white">
         <span className="font-black italic text-xl text-blue-600">{slot.time}</span>
         <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${statusStyles[status]?.bg} ${statusStyles[status]?.text}`}>
@@ -140,16 +141,16 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         </span>
       </div>
 
+      {/* Liste des bulles */}
       <div className="p-2 flex-1 overflow-y-auto space-y-2 bg-gray-50">
         {submissions.map((s) => {
           const rawComment = s.comment || "";
-          // NETTOYAGE VISUEL TOTAL
           const cleanComment = rawComment.replace(/Statut\s*:\s*/gi, "").trim();
           const low = cleanComment.toLowerCase();
 
           return (
             <div key={s.id} className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 relative group">
-              <button onClick={() => deleteItem(s.id)} className="absolute top-1 right-1 text-red-400 opacity-0 group-hover:opacity-100">✕</button>
+              <button onClick={() => deleteItem(s.id)} className="absolute top-1 right-1 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
               <div className="flex justify-between items-center mb-1 text-[7px] font-black text-blue-400 uppercase italic">
                 <span>{s.author}</span>
                 <span>{new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
@@ -164,22 +165,35 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
                 </p>
               )}
 
-              {s.link_url && <a href={s.link_url} target="_blank" className="mt-2 block w-full bg-blue-600 text-white text-center py-1.5 rounded-lg text-[8px] font-black uppercase italic">🔗 LIEN</a>}
+              {s.link_url && <a href={s.link_url} target="_blank" className="mt-2 block w-full bg-blue-600 text-white text-center py-2 rounded-lg text-[8px] font-black uppercase italic shadow-sm">🔗 LIEN</a>}
+              
               {s.file_url && (
-                <div className="mt-2">
+                <div className="mt-2 flex flex-col gap-1.5">
                   {s.file_url.match(/\.(jpeg|jpg|gif|png)$/i) ? (
-                    <img src={s.file_url} onClick={() => setZoomedImage(s.file_url)} className="w-full h-32 object-cover rounded-xl border" alt="Fichier" />
-                  ) : (
-                    <a href={s.file_url} target="_blank" className="text-[8px] font-black text-blue-700 uppercase italic">📄 DOCUMENT</a>
-                  )}
+                    <img src={s.file_url} onClick={() => setZoomedImage(s.file_url)} className="w-full h-32 object-cover rounded-xl border cursor-zoom-in" alt="Fichier" />
+                  ) : null}
+                  
+                  {/* BOUTON TÉLÉCHARGER */}
+                  <a 
+                    href={s.file_url} 
+                    download 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 bg-blue-50 border border-blue-100 p-2 rounded-xl hover:bg-blue-100 transition-all"
+                  >
+                    <span className="text-xs">📥</span>
+                    <span className="text-[8px] font-black text-blue-700 uppercase italic">Télécharger</span>
+                  </a>
                 </div>
               )}
+
               {s.audio_url && <audio src={s.audio_url} controls className="h-7 w-full mt-1" />}
             </div>
           );
         })}
       </div>
 
+      {/* Footer */}
       <div className="p-2 bg-white border-t space-y-2">
         {status !== 'vert' ? (
           <>
@@ -192,7 +206,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
                 {loading ? "..." : "📎"}
                 <input type="file" className="hidden" onChange={handleFileUpload} disabled={loading} />
               </label>
-              <button onMouseDown={startRecording} onMouseUp={() => mediaRecorder.current?.stop()} className={`p-2 rounded-xl text-[9px] font-black italic ${isRecording ? 'bg-red-500 animate-pulse text-white' : 'bg-gray-100 text-gray-700'}`}>
+              <button onMouseDown={startRecording} onMouseUp={() => mediaRecorder.current?.stop()} onTouchStart={startRecording} onTouchEnd={() => mediaRecorder.current?.stop()} className={`p-2 rounded-xl text-[9px] font-black italic ${isRecording ? 'bg-red-500 animate-pulse text-white' : 'bg-gray-100 text-gray-700'}`}>
                 {isRecording ? "REC" : "🎤"}
               </button>
               <button onClick={() => updateStatus(status === 'rouge' ? 'orange' : 'vert')} className={`${status === 'rouge' ? 'bg-orange-500' : 'bg-green-600'} text-white p-2 rounded-xl text-[9px] font-black uppercase italic`}>
