@@ -10,10 +10,8 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   const [linkInput, setLinkInput] = useState(""); 
   const [isRecording, setIsRecording] = useState(false);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
-  
   const mediaRecorder = useRef<MediaRecorder | null>(null);
 
-  // ID UNIQUE : SEMAINE + PLANNING + JOUR + HEURE
   const slotId = `${currentWeek}-${profile?.linked_planning || 'standard'}-${day}-${slot.time}`;
 
   const statusStyles: any = {
@@ -24,61 +22,48 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   };
 
   useEffect(() => {
-    if (binomeId) {
-      fetchData();
-    }
+    if (binomeId) fetchData();
   }, [slotId, binomeId]);
 
   const fetchData = async () => {
     const { data, error } = await supabase
       .from('submissions')
-      .select('id, created_at, status, author, comment, link_url, file_url, audio_url, course_name, day_name, week_id')
+      .select('*')
       .eq('course_name', slotId)
       .eq('binome_id', binomeId)
       .order('created_at', { ascending: false });
     
-    if (error) {
-      console.error("Erreur fetch:", error.message);
-      return;
-    }
-
-    if (data) {
+    if (!error && data) {
       setSubmissions(data);
-      if (data.length > 0) {
-        setStatus(data[0].status?.toLowerCase() || 'gris');
-      } else {
-        setStatus('gris');
-      }
+      setStatus(data[0]?.status?.toLowerCase() || 'gris');
     }
   };
 
-  const saveSubmission = async (payload: any) => {
-    const newStatus = (payload.status || (status === 'gris' ? 'rouge' : status)).toLowerCase();
-    
+  // --- ACTION RADICALE : INSERTION DIRECTE ---
+  const performInsert = async (finalStatus: string, finalComment: string, extras = {}) => {
     try {
-      const { error } = await supabase.from('submissions').insert([{ 
-        course_name: slotId, 
+      const { error } = await supabase.from('submissions').insert({
+        course_name: slotId,
         day_name: day.toLowerCase().trim(),
-        week_id: currentWeek,  
-        status: newStatus, 
-        author: profile?.prenom || 'Anonyme', 
-        user_id: profile?.id || 'anonymous',
+        week_id: currentWeek,
         binome_id: binomeId,
-        ...payload 
-      }]);
-      
+        user_id: profile?.id || 'anonymous',
+        author: profile?.prenom || 'Anonyme',
+        status: finalStatus.toLowerCase(),
+        comment: finalComment, // ICI : On envoie la variable pure
+        ...extras
+      });
       if (error) throw error;
-      setStatus(newStatus);
       await fetchData();
     } catch (err: any) {
-      alert("Erreur base de données : " + err.message);
+      console.error("Erreur insertion:", err.message);
     }
   };
 
   const sendText = async () => {
     if (!comment.trim()) return;
     setLoading(true);
-    await saveSubmission({ comment: comment.trim() });
+    await performInsert('orange', comment.trim());
     setComment("");
     setLoading(false);
   };
@@ -88,124 +73,104 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     setLoading(true);
     let url = linkInput.trim();
     if (!url.startsWith('http')) url = 'https://' + url;
-    await saveSubmission({ link_url: url, comment: "🔗 Lien ajouté" });
+    await performInsert('orange', "Lien ajouté", { link_url: url });
     setLinkInput("");
     setLoading(false);
   };
 
-  const handleFileUpload = async (event: any) => {
-    const file = event.target.files[0];
+  const handleFileUpload = async (e: any) => {
+    const file = e.target.files[0];
     if (!file) return;
     setLoading(true);
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
-      const { error: upErr } = await supabase.storage.from('cours-documents').upload(fileName, file);
-      if (upErr) throw upErr;
-
-      const { data: { publicUrl } } = supabase.storage.from('cours-documents').getPublicUrl(fileName);
-      
-      const isImage = file.name.match(/\.(jpeg|jpg|gif|png)$/i);
-      await saveSubmission({ 
-        file_url: publicUrl, 
-        comment: isImage ? "" : `📄 Fichier : ${file.name}` 
-      });
-    } catch (err: any) {
-      alert("Erreur upload : " + err.message);
-    } finally {
-      setLoading(false);
-    }
+    const fileName = `${Date.now()}-${file.name}`;
+    await supabase.storage.from('cours-documents').upload(fileName, file);
+    const { data: { publicUrl } } = supabase.storage.from('cours-documents').getPublicUrl(fileName);
+    await performInsert('orange', `Fichier : ${file.name}`, { file_url: publicUrl });
+    setLoading(false);
   };
 
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-      
-      mediaRecorder.current = new MediaRecorder(stream, { mimeType });
+      mediaRecorder.current = new MediaRecorder(stream);
       const chunks: Blob[] = [];
-      
-      mediaRecorder.current.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-      };
-
+      mediaRecorder.current.ondataavailable = (e) => chunks.push(e.data);
       mediaRecorder.current.onstop = async () => {
-        const extension = mimeType.includes('webm') ? 'webm' : 'm4a';
-        const blob = new Blob(chunks, { type: mimeType });
-        const fileName = `audio-${Date.now()}.${extension}`;
-        
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        const fileName = `audio-${Date.now()}.webm`;
         setLoading(true);
-        try {
-          const { error: upErr } = await supabase.storage.from('cours-documents').upload(fileName, blob, { contentType: mimeType });
-          if (upErr) throw upErr;
-          const { data: { publicUrl } } = supabase.storage.from('cours-documents').getPublicUrl(fileName);
-          await saveSubmission({ audio_url: publicUrl });
-        } catch (err: any) {
-          alert("Erreur audio : " + err.message);
-        } finally {
-          setLoading(false);
-          setIsRecording(false);
-          stream.getTracks().forEach(track => track.stop());
-        }
+        await supabase.storage.from('cours-documents').upload(fileName, blob);
+        const { data: { publicUrl } } = supabase.storage.from('cours-documents').getPublicUrl(fileName);
+        await performInsert('orange', "Note Vocale", { audio_url: publicUrl });
+        setLoading(false);
+        setIsRecording(false);
       };
-      
       mediaRecorder.current.start();
       setIsRecording(true);
     } catch (err) { alert("Micro inaccessible"); }
   };
 
-  // MISE À JOUR : On n'envoie plus de texte dans le commentaire
-  const updateStatus = async (newStat: string) => {
-    await saveSubmission({ comment: "", status: newStat.toLowerCase() });
+  // --- BOUTON FINIR : STRICTEMENT AUCUN TEXTE "STATUT" ---
+  const updateStatus = async (newColor: string) => {
+    const color = newColor.toLowerCase().trim();
+    // On force l'envoi de la couleur pure dans les deux colonnes
+    await performInsert(color, color); 
   };
 
   const deleteItem = async (id: string) => {
-    if (!confirm("Supprimer ?")) return;
-    await supabase.from('submissions').delete().eq('id', id);
-    fetchData();
+    if (confirm("Supprimer ?")) {
+      await supabase.from('submissions').delete().eq('id', id);
+      fetchData();
+    }
   };
 
   return (
     <div className={`bg-white rounded-3xl shadow-md border-l-[10px] flex flex-col h-full min-h-[300px] overflow-hidden transition-all duration-500 ${statusStyles[status]?.border || 'border-gray-200'}`}>
       
       {zoomedImage && (
-        <div className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center p-4" onClick={() => setZoomedImage(null)}>
-          <img src={zoomedImage} className="max-w-full max-h-full object-contain rounded-lg" />
+        <div className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center p-4" onClick={() => setZoomedImage(null)}>
+          <img src={zoomedImage} className="max-w-full max-h-full object-contain" alt="Zoom" />
         </div>
       )}
 
       <div className="p-3 border-b flex justify-between items-center bg-white">
-        <span className="font-[900] italic text-xl text-blue-600 tracking-tighter">{slot.time}</span>
-        <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${statusStyles[status]?.bg} ${statusStyles[status]?.text}`}>
+        <span className="font-black italic text-xl text-blue-600">{slot.time}</span>
+        <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${statusStyles[status]?.bg} ${statusStyles[status]?.text}`}>
           ● {status}
         </span>
       </div>
 
-      <div className="p-2 flex-1 overflow-y-auto space-y-2 bg-[#F9FAFB]">
+      <div className="p-2 flex-1 overflow-y-auto space-y-2 bg-gray-50">
         {submissions.map((s) => {
-          // FILTRE : Masquer les messages système de statut automatiques
-          if (s.comment?.includes("Statut :") || s.comment === "Cours Validé") return null;
-          
+          const rawComment = s.comment || "";
+          // NETTOYAGE VISUEL TOTAL
+          const cleanComment = rawComment.replace(/Statut\s*:\s*/gi, "").trim();
+          const low = cleanComment.toLowerCase();
+
           return (
             <div key={s.id} className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 relative group">
-              <button onClick={() => deleteItem(s.id)} className="absolute top-1 right-1 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+              <button onClick={() => deleteItem(s.id)} className="absolute top-1 right-1 text-red-400 opacity-0 group-hover:opacity-100">✕</button>
               <div className="flex justify-between items-center mb-1 text-[7px] font-black text-blue-400 uppercase italic">
                 <span>{s.author}</span>
                 <span>{new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
-              {s.comment && <p className="text-[9px] font-bold text-gray-800 uppercase italic leading-tight">{s.comment}</p>}
-              {s.link_url && (
-                <a href={s.link_url} target="_blank" rel="noopener noreferrer" className="mt-2 block w-full bg-blue-600 text-white text-center py-2 rounded-lg text-[8px] font-black uppercase italic">🔗 Ouvrir le lien</a>
+              
+              {rawComment && (
+                <p className={`text-[10px] font-bold uppercase italic leading-tight ${
+                  low === 'vert' ? 'text-green-600' : 
+                  low === 'orange' ? 'text-orange-600' : 'text-gray-800'
+                }`}>
+                  {cleanComment}
+                </p>
               )}
+
+              {s.link_url && <a href={s.link_url} target="_blank" className="mt-2 block w-full bg-blue-600 text-white text-center py-1.5 rounded-lg text-[8px] font-black uppercase italic">🔗 LIEN</a>}
               {s.file_url && (
                 <div className="mt-2">
                   {s.file_url.match(/\.(jpeg|jpg|gif|png)$/i) ? (
-                    <img src={s.file_url} onClick={() => setZoomedImage(s.file_url)} className="w-full h-32 object-cover rounded-xl cursor-zoom-in border" />
+                    <img src={s.file_url} onClick={() => setZoomedImage(s.file_url)} className="w-full h-32 object-cover rounded-xl border" alt="Fichier" />
                   ) : (
-                    <a href={s.file_url} target="_blank" download className="flex items-center gap-2 bg-blue-50 p-2 rounded-lg border border-blue-100">
-                      <span className="text-xl">📄</span>
-                      <span className="text-[8px] font-black text-blue-700 uppercase italic">Document</span>
-                    </a>
+                    <a href={s.file_url} target="_blank" className="text-[8px] font-black text-blue-700 uppercase italic">📄 DOCUMENT</a>
                   )}
                 </div>
               )}
@@ -213,44 +178,30 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
             </div>
           );
         })}
-        {submissions.filter(s => !s.comment?.includes("Statut :") && s.comment !== "Cours Validé").length === 0 && (
-          <p className="text-[8px] text-gray-300 italic text-center mt-10 uppercase font-black">Disponible</p>
-        )}
       </div>
 
-      <div className="p-2 bg-white border-t space-y-1.5">
+      <div className="p-2 bg-white border-t space-y-2">
         {status !== 'vert' ? (
           <>
             <div className="flex gap-1">
               <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="NOTE..." className="flex-1 p-2 text-[10px] font-bold uppercase italic border rounded-xl bg-gray-50 outline-none" />
-              <button onClick={sendText} disabled={!comment.trim() || loading} className="bg-blue-600 text-white px-3 rounded-xl font-black text-[9px]">OK</button>
+              <button onClick={sendText} disabled={!comment.trim() || loading} className="bg-blue-600 text-white px-4 rounded-xl font-black text-[10px]">OK</button>
             </div>
-
-            <div className="flex gap-1">
-              <input value={linkInput} onChange={(e) => setLinkInput(e.target.value)} placeholder="LIEN..." className="flex-1 p-2 text-[10px] font-bold uppercase italic border border-sky-100 rounded-xl bg-sky-50 outline-none" />
-              <button onClick={sendLink} disabled={!linkInput.trim() || loading} className="bg-sky-500 text-white px-3 rounded-xl font-black text-[9px]">🔗</button>
-            </div>
-
             <div className="grid grid-cols-3 gap-1">
-              <label className="bg-indigo-500 text-white p-2 rounded-xl text-[8px] font-[900] text-center cursor-pointer uppercase italic flex items-center justify-center">
-                {loading ? "..." : "📎 JOINDRE"}
+              <label className="bg-indigo-500 text-white p-2 rounded-xl text-[9px] font-black text-center cursor-pointer flex items-center justify-center uppercase italic">
+                {loading ? "..." : "📎"}
                 <input type="file" className="hidden" onChange={handleFileUpload} disabled={loading} />
               </label>
-              
-              <button 
-                onMouseDown={startRecording} onMouseUp={() => mediaRecorder.current?.stop()} 
-                onTouchStart={startRecording} onTouchEnd={() => mediaRecorder.current?.stop()}
-                className={`p-2 rounded-xl text-[8px] font-[900] italic shadow-sm ${isRecording ? 'bg-red-500 animate-pulse text-white' : 'bg-gray-100 text-gray-700'}`}>
+              <button onMouseDown={startRecording} onMouseUp={() => mediaRecorder.current?.stop()} className={`p-2 rounded-xl text-[9px] font-black italic ${isRecording ? 'bg-red-500 animate-pulse text-white' : 'bg-gray-100 text-gray-700'}`}>
                 {isRecording ? "REC" : "🎤"}
               </button>
-
-              <button onClick={() => updateStatus(status === 'rouge' ? 'orange' : 'vert')} className={`${status === 'rouge' ? 'bg-orange-500' : 'bg-green-600'} text-white p-2 rounded-xl text-[8px] font-[900] uppercase italic shadow-md`}>
+              <button onClick={() => updateStatus(status === 'rouge' ? 'orange' : 'vert')} className={`${status === 'rouge' ? 'bg-orange-500' : 'bg-green-600'} text-white p-2 rounded-xl text-[9px] font-black uppercase italic`}>
                 {status === 'rouge' ? 'OUVRIR' : 'FINIR'}
               </button>
             </div>
           </>
         ) : (
-          <div onClick={() => updateStatus('orange')} className="bg-green-50 text-green-700 p-2 rounded-xl text-[9px] font-black text-center border border-green-200 cursor-pointer italic uppercase">VALIDÉE ✓</div>
+          <div onClick={() => updateStatus('orange')} className="bg-green-50 text-green-700 p-2 rounded-xl text-[10px] font-black text-center border border-green-200 cursor-pointer italic uppercase">VALIDÉE ✓</div>
         )}
       </div>
     </div>

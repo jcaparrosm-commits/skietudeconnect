@@ -42,20 +42,18 @@ export default function Home() {
   
   const router = useRouter();
 
-  // --- RÉCUPÉRATION DES STATUTS (LOGIQUE DE COULEUR AMÉLIORÉE) ---
+  // --- LOGIQUE DE CALCUL DES COULEURS (AVEC DÉTECTION DE COMMENTAIRE) ---
   const fetchModifications = async (binomeId: string, weekId: string) => {
     if (!binomeId || binomeId === "null") return;
 
     const { data, error } = await supabase
       .from('submissions')
-      .select('day_name, status') 
+      .select('day_name, status, course_name, comment, created_at')
       .eq('binome_id', binomeId)
-      .eq('week_id', weekId);
+      .eq('week_id', weekId)
+      .order('created_at', { ascending: true }); 
 
-    if (error) {
-      console.error("❌ Erreur Supabase:", error.message);
-      return;
-    }
+    if (error) return;
 
     if (data) {
       const oranges: string[] = [];
@@ -63,25 +61,43 @@ export default function Home() {
       const daysList = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
 
       daysList.forEach(day => {
-        const dayEntries = data.filter(item => 
+        const dayEntries = data.filter((item: any) => 
           item.day_name && item.day_name.trim().toLowerCase() === day
         );
 
         if (dayEntries.length > 0) {
-          // On normalise les statuts pour la comparaison
-          const statuses = dayEntries.map(e => e.status?.trim().toLowerCase());
+          const lastStatusBySlot: any = {};
+          
+          dayEntries.forEach((e: any) => {
+            // 1. On cherche d'abord dans la colonne status
+            let s = e.status?.trim().toLowerCase() || "";
+            
+            // 2. Si status est vide, on cherche le mot-clé dans le commentaire
+            if (!s || s === "") {
+              const text = e.comment?.toLowerCase() || "";
+              if (text.includes("Statut : vert")) s = "vert";
+              else if (text.includes("Statut : orange")) s = "orange";
+              else if (text.includes("Statut :rouge")) s = "rouge";
+            }
+            
+            // On garde ce statut comme étant le dernier pour cette case
+            if (s) {
+              lastStatusBySlot[e.course_name] = s;
+            }
+          });
 
-          // RÈGLE 1 : Si un seul cours est Orange ou Rouge -> Journée Orange
-          const hasAlert = statuses.some(s => s === 'orange' || s === 'rouge');
+          const finalStatuses = Object.values(lastStatusBySlot) as string[];
+
+          // RÈGLE : Si une seule case finit en orange ou rouge -> JOUR ORANGE
+          const hasAlert = finalStatuses.some(s => s === 'orange' || s === 'rouge');
+          
+          // RÈGLE : Si toutes les cases avec activité finissent en vert -> JOUR VERT
+          const allGreen = finalStatuses.length > 0 && finalStatuses.every(s => s === 'vert');
 
           if (hasAlert) {
             oranges.push(day);
-          } else {
-            // RÈGLE 2 : Si pas d'alerte ET au moins un cours est Vert -> Journée Verte
-            const hasGreen = statuses.some(s => s === 'vert');
-            if (hasGreen) {
-              greens.push(day);
-            }
+          } else if (allGreen) {
+            greens.push(day);
           }
         }
       });
@@ -129,7 +145,7 @@ export default function Home() {
     setCurrentWeekId(getWeekIdentifier(newDate));
   };
 
-  if (loading) return <div className="h-screen flex items-center justify-center bg-[#F0F2F5] font-black text-blue-600 italic text-2xl uppercase">Chargement...</div>;
+  if (loading) return <div className="h-screen flex items-center justify-center bg-[#F0F2F5] font-black text-blue-600 italic text-2xl uppercase text-center p-10">Chargement du Planning...</div>;
 
   const daysMenu = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
   const morningSlots = ["08:30", "09:30", "10:30", "11:30", "12:30"];
