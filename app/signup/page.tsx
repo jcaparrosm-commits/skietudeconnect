@@ -35,7 +35,7 @@ export default function SignupPage() {
       // 2. Création du profil dans la table 'profiles'
       const { error: profileError } = await supabase
         .from('profiles')
-        .insert([
+        .upsert([
           {
             id: authData.user.id, // On lie l'ID Auth à l'ID Profil
             nom,
@@ -43,7 +43,7 @@ export default function SignupPage() {
             role,
             email // Si tu as gardé la colonne email, sinon tu peux l'enlever
           }
-        ]);
+        ], { onConflict: 'id' }); // Si l'ID existe déjà, il met à jour au lieu de planter
 
       if (profileError) {
         setError("Erreur profil: " + profileError.message);
