@@ -1,6 +1,6 @@
 {
-  "name": "Mon Planning Supabase",
-  "short_name": "Planning",
+  "name": "Skietudeconnect",
+  "short_name": "Skietude",
   "description": "Gestion de planning en temps réel",
   "start_url": "/",
   "display": "standalone",
