@@ -8,3 +8,16 @@ body {
 }
 
 .bg-white { background-color: #ffffff !important; }
+
+html, body {
+  /* Empêche le rebond élastique au scroll sur iOS */
+  overscroll-behavior: none;
+  /* Empêche la sélection de texte accidentelle sur les boutons */
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+/* Permet de scroller uniquement dans les zones prévues */
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}

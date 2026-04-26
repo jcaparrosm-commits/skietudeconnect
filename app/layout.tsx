@@ -3,6 +3,17 @@ import { Inter } from 'next/font/google'
 
 const inter = Inter({ subsets: ['latin'] })
 
+export const metadata = {
+  title: "Planning App",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Planning App",
+  },
+  viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0", 
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr">
