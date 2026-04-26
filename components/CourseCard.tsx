@@ -91,25 +91,48 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     setLoading(false);
   };
 
+  // --- VERSION OPTIMISÉE POUR IPHONE ---
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder.current = new MediaRecorder(stream);
+      
+      // Détecter si c'est un iPhone (Safari) pour utiliser le bon format
+      const mimeType = MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : 'audio/webm';
+      
+      mediaRecorder.current = new MediaRecorder(stream, { mimeType });
       const chunks: Blob[] = [];
-      mediaRecorder.current.ondataavailable = (e) => chunks.push(e.data);
-      mediaRecorder.current.onstop = async () => {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-        const fileName = `audio-${Date.now()}.webm`;
-        setLoading(true);
-        await supabase.storage.from('cours-documents').upload(fileName, blob);
-        const { data: { publicUrl } } = supabase.storage.from('cours-documents').getPublicUrl(fileName);
-        await performInsert('orange', "Note Vocale", { audio_url: publicUrl });
-        setLoading(false);
-        setIsRecording(false);
+      
+      mediaRecorder.current.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
       };
+
+      mediaRecorder.current.onstop = async () => {
+        setLoading(true);
+        try {
+          const extension = mimeType.includes('mp4') ? 'm4a' : 'webm';
+          const blob = new Blob(chunks, { type: mimeType });
+          const fileName = `audio-${Date.now()}.${extension}`;
+          
+          const { error: uploadError } = await supabase.storage.from('cours-documents').upload(fileName, blob);
+          if (uploadError) throw uploadError;
+
+          const { data: { publicUrl } } = supabase.storage.from('cours-documents').getPublicUrl(fileName);
+          await performInsert('orange', "Note Vocale", { audio_url: publicUrl });
+        } catch (err) {
+          console.error("Erreur iPhone Audio:", err);
+        } finally {
+          setLoading(false);
+          setIsRecording(false);
+          // Arrêter proprement toutes les pistes du micro
+          stream.getTracks().forEach(track => track.stop());
+        }
+      };
+
       mediaRecorder.current.start();
       setIsRecording(true);
-    } catch (err) { alert("Micro inaccessible"); }
+    } catch (err) { 
+      alert("Micro bloqué. Vérifiez les réglages Safari (Réglages > Safari > Micro)"); 
+    }
   };
 
   const updateStatus = async (newColor: string) => {
@@ -133,7 +156,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         </div>
       )}
 
-      {/* Header */}
       <div className="p-3 border-b flex justify-between items-center bg-white">
         <span className="font-black italic text-xl text-blue-600">{slot.time}</span>
         <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${statusStyles[status]?.bg} ${statusStyles[status]?.text}`}>
@@ -141,7 +163,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         </span>
       </div>
 
-      {/* Liste des bulles */}
       <div className="p-2 flex-1 overflow-y-auto space-y-2 bg-gray-50">
         {submissions.map((s) => {
           const rawComment = s.comment || "";
@@ -150,7 +171,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
 
           return (
             <div key={s.id} className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 relative group">
-              <button onClick={() => deleteItem(s.id)} className="absolute top-1 right-1 text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+              <button onClick={() => deleteItem(s.id)} className="absolute top-1 right-1 text-red-400 opacity-0 group-hover:opacity-100">✕</button>
               <div className="flex justify-between items-center mb-1 text-[7px] font-black text-blue-400 uppercase italic">
                 <span>{s.author}</span>
                 <span>{new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
@@ -165,22 +186,14 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
                 </p>
               )}
 
-              {s.link_url && <a href={s.link_url} target="_blank" className="mt-2 block w-full bg-blue-600 text-white text-center py-2 rounded-lg text-[8px] font-black uppercase italic shadow-sm">🔗 LIEN</a>}
+              {s.link_url && <a href={s.link_url} target="_blank" className="mt-2 block w-full bg-blue-600 text-white text-center py-2 rounded-lg text-[8px] font-black uppercase italic">🔗 LIEN</a>}
               
               {s.file_url && (
                 <div className="mt-2 flex flex-col gap-1.5">
                   {s.file_url.match(/\.(jpeg|jpg|gif|png)$/i) ? (
                     <img src={s.file_url} onClick={() => setZoomedImage(s.file_url)} className="w-full h-32 object-cover rounded-xl border cursor-zoom-in" alt="Fichier" />
                   ) : null}
-                  
-                  {/* BOUTON TÉLÉCHARGER */}
-                  <a 
-                    href={s.file_url} 
-                    download 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 bg-blue-50 border border-blue-100 p-2 rounded-xl hover:bg-blue-100 transition-all"
-                  >
+                  <a href={s.file_url} download target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 bg-blue-50 border border-blue-100 p-2 rounded-xl">
                     <span className="text-xs">📥</span>
                     <span className="text-[8px] font-black text-blue-700 uppercase italic">Télécharger</span>
                   </a>
@@ -193,7 +206,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         })}
       </div>
 
-      {/* Footer */}
       <div className="p-2 bg-white border-t space-y-2">
         {status !== 'vert' ? (
           <>
@@ -206,9 +218,17 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
                 {loading ? "..." : "📎"}
                 <input type="file" className="hidden" onChange={handleFileUpload} disabled={loading} />
               </label>
-              <button onMouseDown={startRecording} onMouseUp={() => mediaRecorder.current?.stop()} onTouchStart={startRecording} onTouchEnd={() => mediaRecorder.current?.stop()} className={`p-2 rounded-xl text-[9px] font-black italic ${isRecording ? 'bg-red-500 animate-pulse text-white' : 'bg-gray-100 text-gray-700'}`}>
-                {isRecording ? "REC" : "🎤"}
+              
+              {/* BOUTON AUDIO AVEC GESTION IPHONE */}
+              <button 
+                onMouseDown={startRecording} 
+                onMouseUp={() => mediaRecorder.current?.stop()} 
+                onTouchStart={startRecording} 
+                onTouchEnd={() => mediaRecorder.current?.stop()} 
+                className={`p-2 rounded-xl text-[9px] font-black italic ${isRecording ? 'bg-red-500 animate-pulse text-white' : 'bg-gray-100 text-gray-700'}`}>
+                {isRecording ? "REC" : loading ? "..." : "🎤"}
               </button>
+
               <button onClick={() => updateStatus(status === 'rouge' ? 'orange' : 'vert')} className={`${status === 'rouge' ? 'bg-orange-500' : 'bg-green-600'} text-white p-2 rounded-xl text-[9px] font-black uppercase italic`}>
                 {status === 'rouge' ? 'OUVRIR' : 'FINIR'}
               </button>
