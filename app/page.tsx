@@ -65,7 +65,7 @@ export default function Home() {
   useEffect(() => {
     if (user) {
       fetchNotifications();
-      const interval = setInterval(fetchNotifications, 30000); // Check toutes les 30s
+      const interval = setInterval(fetchNotifications, 5000); // Check toutes les 30s
       return () => clearInterval(interval);
     }
   }, [user]);

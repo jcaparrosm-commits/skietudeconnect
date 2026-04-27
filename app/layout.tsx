@@ -5,12 +5,12 @@ const inter = Inter({ subsets: ['latin'] })
 
 // Configuration des métadonnées
 export const metadata = {
-  title: "Planning App",
+  title: "Skietudeconnect",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Planning App",
+    title: "Skietude",
   },
   // AJOUT DE L'ICÔNE APPLE
   icons: {

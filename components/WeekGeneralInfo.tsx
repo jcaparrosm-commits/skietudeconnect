@@ -16,7 +16,7 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
   const audioChunks = useRef<Blob[]>([]);
 
   // *** REMPLACE PAR TON EMAIL EXACT ***
-  const COACH_EMAIL = 'jcaparros@educand.ad';
+  const COACH_EMAIL = 'jcaparrosm@educand.ad';
 
   useEffect(() => {
     const checkUser = async () => {
