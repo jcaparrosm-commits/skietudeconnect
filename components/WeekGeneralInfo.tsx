@@ -4,6 +4,8 @@ import { supabase } from '@/lib/supabase';
 
 export default function WeekGeneralInfo({ currentWeek, day }: any) {
   const [infos, setInfos] = useState<any[]>([]);
+  const [user, setUser] = useState<any>(null);
+  const [authLoaded, setAuthLoaded] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -13,11 +15,31 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioChunks = useRef<Blob[]>([]);
 
-  // --- RÉCUPÉRATION DES DONNÉES (CORRIGÉ) ---
+  // *** REMPLACE PAR TON EMAIL EXACT ***
+  const COACH_EMAIL = 'jcaparros@educand.ad';
+
+  useEffect(() => {
+    const checkUser = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        setUser(user);
+      } catch (err) {
+        console.error("Erreur auth:", err);
+      } finally {
+        setAuthLoaded(true);
+      }
+    };
+
+    checkUser();
+    fetchInfos();
+  }, [currentWeek, day]);
+
+  // Vérification stricte de l'identité
+  const isAdmin = user?.email && user.email.toLowerCase().trim() === COACH_EMAIL.toLowerCase().trim();
+
   const fetchInfos = async () => {
     if (!supabase || !currentWeek) return;
     try {
-      // On liste explicitement les colonnes pour éviter l'erreur 400 (column time/tiem)
       const { data, error } = await supabase
         .from('week_infos')
         .select('id, created_at, week_id, day_name, content, type, status')
@@ -32,12 +54,8 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
     }
   };
 
-  useEffect(() => {
-    fetchInfos();
-  }, [currentWeek, day]);
-
-  // --- SAUVEGARDE EN BASE ---
   const uploadToDB = async (content: string, type: string) => {
+    if (!isAdmin) return;
     try {
       const { error } = await supabase.from('week_infos').insert({
         week_id: currentWeek,
@@ -49,41 +67,31 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
       if (error) throw error;
       fetchInfos();
     } catch (err: any) {
-      console.error("Erreur insertion week_infos:", err.message);
+      console.error("Erreur insertion:", err.message);
     }
   };
 
   // --- GESTION AUDIO ---
   const startRecording = async () => {
+    if (!isAdmin) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-      
       mediaRecorder.current = new MediaRecorder(stream, { mimeType });
       audioChunks.current = [];
-      
-      mediaRecorder.current.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunks.current.push(e.data);
-      };
-
+      mediaRecorder.current.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.current.push(e.data); };
       mediaRecorder.current.onstop = async () => {
         const audioBlob = new Blob(audioChunks.current, { type: mimeType });
-        const extension = mimeType.includes('webm') ? 'webm' : 'm4a';
-        const path = `week_infos/${Date.now()}.${extension}`;
-        
+        const path = `week_infos/${Date.now()}.${mimeType.includes('webm') ? 'webm' : 'm4a'}`;
         const { error: upErr } = await supabase.storage.from('session-files').upload(path, audioBlob);
         if (upErr) throw upErr;
-
         const { data: { publicUrl } } = supabase.storage.from('session-files').getPublicUrl(path);
         await uploadToDB(publicUrl, 'audio');
         stream.getTracks().forEach(t => t.stop());
       };
-
       mediaRecorder.current.start();
       setIsRecording(true);
-    } catch (e) {
-      alert("Micro inaccessible");
-    }
+    } catch (e) { alert("Micro inaccessible"); }
   };
 
   const stopRecording = () => {
@@ -95,6 +103,7 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
 
   // --- GESTION PHOTO ---
   const handlePhotoUpload = async (e: any) => {
+    if (!isAdmin) return;
     const file = e.target.files?.[0];
     if (!file) return;
     setLoading(true);
@@ -102,15 +111,13 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
       const path = `week_infos/${Date.now()}.jpg`;
       const { error: upErr } = await supabase.storage.from('session-files').upload(path, file);
       if (upErr) throw upErr;
-
       const { data: { publicUrl } } = supabase.storage.from('session-files').getPublicUrl(path);
       await uploadToDB(publicUrl, 'photo');
-    } catch (err: any) {
-      alert("Erreur upload photo");
-    } finally {
-      setLoading(false);
-    }
+    } catch (err: any) { alert("Erreur upload photo"); } finally { setLoading(false); }
   };
+
+  // Si on n'a pas encore vérifié l'utilisateur, on affiche un loader discret
+  if (!authLoaded) return <div className="h-[450px] flex items-center justify-center text-blue-400 italic">Chargement...</div>;
 
   return (
     <div className="bg-blue-900 text-white rounded-[2.5rem] p-6 shadow-2xl flex flex-col border-4 border-blue-400 min-h-[450px] relative">
@@ -131,15 +138,18 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
                 className="w-full rounded-xl cursor-zoom-in hover:scale-[1.02] transition-transform shadow-lg border border-white/10" 
               />
             )}
-            <button 
-              onClick={async () => { 
-                await supabase.from('week_infos').delete().eq('id', info.id); 
-                fetchInfos(); 
-              }} 
-              className="absolute -top-1 -right-1 bg-red-500 rounded-full w-5 h-5 text-[8px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-md"
-            >
-              ✕
-            </button>
+            
+            {isAdmin && (
+              <button 
+                onClick={async () => { 
+                  await supabase.from('week_infos').delete().eq('id', info.id); 
+                  fetchInfos(); 
+                }} 
+                className="absolute -top-1 -right-1 bg-red-500 rounded-full w-5 h-5 text-[8px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-md"
+              >
+                ✕
+              </button>
+            )}
           </div>
         ))}
         {infos.length === 0 && (
@@ -150,56 +160,38 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-2 mt-auto">
-        <button 
-          onMouseDown={startRecording} 
-          onMouseUp={stopRecording} 
-          onMouseLeave={stopRecording}
-          onTouchStart={startRecording}
-          onTouchEnd={stopRecording}
-          className={`py-4 rounded-2xl flex items-center justify-center transition-all shadow-xl active:scale-95 ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-blue-700 hover:bg-blue-600'}`}
-        >
-          🎙️
-        </button>
-        <label className="bg-blue-700 py-4 rounded-2xl flex items-center justify-center cursor-pointer shadow-xl hover:bg-blue-600 transition-all active:scale-95">
-          📸 <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
-        </label>
-        <button 
-          onClick={() => setIsTyping(!isTyping)} 
-          className={`py-4 rounded-2xl flex items-center justify-center text-xl shadow-xl transition-all active:scale-95 ${isTyping ? 'bg-white text-blue-900' : 'bg-blue-600 hover:bg-blue-500'}`}
-        >
-          📝
-        </button>
-      </div>
+      {/* INTERFACE CONDITIONNELLE */}
+      {isAdmin ? (
+        <div className="mt-auto">
+          <div className="grid grid-cols-3 gap-2">
+            <button onMouseDown={startRecording} onMouseUp={stopRecording} onTouchStart={startRecording} onTouchEnd={stopRecording}
+              className={`py-4 rounded-2xl flex items-center justify-center transition-all shadow-xl ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-blue-700'}`}>
+              🎙️
+            </button>
+            <label className="bg-blue-700 py-4 rounded-2xl flex items-center justify-center cursor-pointer shadow-xl">
+              📸 <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+            </label>
+            <button onClick={() => setIsTyping(!isTyping)} className={`py-4 rounded-2xl flex items-center justify-center text-xl shadow-xl ${isTyping ? 'bg-white text-blue-900' : 'bg-blue-600'}`}>
+              📝
+            </button>
+          </div>
 
-      {isTyping && (
-        <form 
-          onSubmit={(e) => { 
-            e.preventDefault(); 
-            if(inputValue.trim()) {
-              uploadToDB(inputValue, 'text'); 
-              setInputValue(""); 
-              setIsTyping(false); 
-            }
-          }} 
-          className="mt-3 flex gap-2 animate-in slide-in-from-top-2"
-        >
-          <input 
-            autoFocus
-            value={inputValue} 
-            onChange={e => setInputValue(e.target.value)} 
-            className="flex-1 bg-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none border border-white/20 placeholder:text-blue-300" 
-            placeholder="Écrire une note..." 
-          />
-          <button type="submit" className="bg-white text-blue-900 px-4 rounded-xl font-black text-[10px] uppercase italic">OK</button>
-        </form>
+          {isTyping && (
+            <form onSubmit={(e) => { e.preventDefault(); if(inputValue.trim()) { uploadToDB(inputValue, 'text'); setInputValue(""); setIsTyping(false); } }} className="mt-3 flex gap-2 animate-in slide-in-from-top-2">
+              <input autoFocus value={inputValue} onChange={e => setInputValue(e.target.value)} className="flex-1 bg-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none border border-white/20" placeholder="Écrire..." />
+              <button type="submit" className="bg-white text-blue-900 px-4 rounded-xl font-black text-[10px] uppercase">OK</button>
+            </form>
+          )}
+        </div>
+      ) : (
+        <div className="mt-auto py-3 text-center border-t border-blue-400/20 bg-blue-800/20 rounded-2xl">
+          <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest opacity-60 italic">Mode Lecture Seule</p>
+        </div>
       )}
 
-      {/* MODAL ZOOM PHOTO */}
       {selectedPhoto && (
         <div className="fixed inset-0 z-[999] bg-black/95 flex items-center justify-center p-4" onClick={() => setSelectedPhoto(null)}>
-          <img src={selectedPhoto} className="max-w-full max-h-full object-contain rounded-lg animate-in zoom-in duration-200" />
-          <button className="absolute top-6 right-6 bg-white/20 text-white p-4 rounded-full font-black text-xl hover:bg-white/40 transition-all">✕</button>
+          <img src={selectedPhoto} className="max-w-full max-h-full object-contain" />
         </div>
       )}
     </div>
