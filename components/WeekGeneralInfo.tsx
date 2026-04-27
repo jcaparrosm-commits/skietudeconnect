@@ -68,7 +68,7 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
         content: content,
         type: type,
         status: 'sent',
-        author_id: user?.id
+        author_id: user.id
       });
       if (error) throw error;
       fetchInfos();
