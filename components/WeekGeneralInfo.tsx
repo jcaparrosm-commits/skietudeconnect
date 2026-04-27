@@ -41,11 +41,14 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
   const fetchInfos = async () => {
     if (!supabase || !currentWeek) return;
     try {
+      // On force 'day' en minuscules pour correspondre à Supabase
+      const formattedDay = day ? day.toLowerCase() : 'général';
+
       const { data, error } = await supabase
         .from('week_infos')
         .select('id, created_at, week_id, day_name, content, type, status, author_id')
         .eq('week_id', currentWeek)
-        .eq('day_name', day || 'Général')
+        .eq('day_name', formattedDay) // Utilise le jour en minuscules
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -60,16 +63,17 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
     try {
       const { error } = await supabase.from('week_infos').insert({
         week_id: currentWeek,
-        day_name: day || 'Général',
+        // On force l'enregistrement en minuscules ici aussi
+        day_name: (day || 'Général').toLowerCase(), 
         content: content,
         type: type,
         status: 'sent',
-        author_id: user?.id // On enregistre qui a écrit
+        author_id: user?.id
       });
       if (error) throw error;
       fetchInfos();
     } catch (err: any) {
-      console.error("Erreur insertion table week_infos:", err.message);
+      console.error("Erreur insertion:", err.message);
     }
   };
 
