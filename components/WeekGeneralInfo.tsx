@@ -59,16 +59,21 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
   };
 
   const uploadToDB = async (content: string, type: string) => {
-    if (!canWrite) return;
+    if (!user) return;
+  
+    // On récupère le nom du binôme dans les métadonnées de l'utilisateur
+    // Si c'est toi, on met 'Coach', sinon on prend son nom enregistré
+    const nomBinome = isAdmin ? 'Coach' : (user.user_metadata?.nom_binome || 'Inconnu');
+
     try {
       const { error } = await supabase.from('week_infos').insert({
         week_id: currentWeek,
-        // On force l'enregistrement en minuscules ici aussi
-        day_name: (day || 'Général').toLowerCase(), 
+        day_name: (day || 'Général').toLowerCase(),
         content: content,
         type: type,
         status: 'sent',
-        author_id: user.id
+        author_id: user.id,
+        nom_binome: nomBinome // <-- On enregistre le nom ici
       });
       if (error) throw error;
       fetchInfos();
