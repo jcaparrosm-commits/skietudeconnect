@@ -34,13 +34,16 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
   }, [currentWeek, day]);
 
   const isAdmin = user?.email && user.email.toLowerCase().trim() === COACH_EMAIL;
+  
+  // Les élèves peuvent écrire si on est sur un jour précis, pas sur le "Général" de la semaine
+  const canWrite = isAdmin || (day && day !== 'Général');
 
   const fetchInfos = async () => {
     if (!supabase || !currentWeek) return;
     try {
       const { data, error } = await supabase
         .from('week_infos')
-        .select('id, created_at, week_id, day_name, content, type, status')
+        .select('id, created_at, week_id, day_name, content, type, status, author_id')
         .eq('week_id', currentWeek)
         .eq('day_name', day || 'Général')
         .order('created_at', { ascending: true });
@@ -53,14 +56,15 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
   };
 
   const uploadToDB = async (content: string, type: string) => {
-    if (!isAdmin) return;
+    if (!canWrite) return;
     try {
       const { error } = await supabase.from('week_infos').insert({
         week_id: currentWeek,
         day_name: day || 'Général',
         content: content,
         type: type,
-        status: 'sent'
+        status: 'sent',
+        author_id: user?.id // On enregistre qui a écrit
       });
       if (error) throw error;
       fetchInfos();
@@ -69,40 +73,23 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
     }
   };
 
-  // --- GESTION AUDIO (CORRIGÉ) ---
   const startRecording = async () => {
-    if (!isAdmin) return;
+    if (!canWrite) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
       mediaRecorder.current = new MediaRecorder(stream, { mimeType });
       audioChunks.current = [];
-      
-      mediaRecorder.current.ondataavailable = (e) => { 
-        if (e.data.size > 0) audioChunks.current.push(e.data); 
-      };
-
+      mediaRecorder.current.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.current.push(e.data); };
       mediaRecorder.current.onstop = async () => {
         const audioBlob = new Blob(audioChunks.current, { type: mimeType });
-        const fileName = `${Date.now()}.${mimeType.includes('webm') ? 'webm' : 'm4a'}`;
-        const path = `week_infos/${fileName}`;
-
-        // Upload au Storage
-        const { data, error: upErr } = await supabase.storage
-          .from('session-files')
-          .upload(path, audioBlob);
-
-        if (upErr) {
-          console.error("Erreur Upload Audio Storage:", upErr.message);
-          alert("Erreur stockage audio");
-          return;
-        }
-
+        const path = `week_infos/${Date.now()}.${mimeType.includes('webm') ? 'webm' : 'm4a'}`;
+        const { error: upErr } = await supabase.storage.from('session-files').upload(path, audioBlob);
+        if (upErr) throw upErr;
         const { data: { publicUrl } } = supabase.storage.from('session-files').getPublicUrl(path);
         await uploadToDB(publicUrl, 'audio');
         stream.getTracks().forEach(t => t.stop());
       };
-
       mediaRecorder.current.start();
       setIsRecording(true);
     } catch (e) { alert("Micro inaccessible"); }
@@ -115,33 +102,18 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
     }
   };
 
-  // --- GESTION PHOTO (CORRIGÉ) ---
   const handlePhotoUpload = async (e: any) => {
-    if (!isAdmin) return;
+    if (!canWrite) return;
     const file = e.target.files?.[0];
     if (!file) return;
     setLoading(true);
     try {
-      const fileName = `${Date.now()}-${file.name.replace(/\s/g, '_')}`;
-      const path = `week_infos/${fileName}`;
-
-      const { data, error: upErr } = await supabase.storage
-        .from('session-files')
-        .upload(path, file);
-
-      if (upErr) {
-        console.error("Erreur Upload Photo Storage:", upErr.message);
-        alert("Erreur stockage photo");
-        return;
-      }
-
+      const path = `week_infos/${Date.now()}-${file.name.replace(/\s/g, '_')}`;
+      const { error: upErr } = await supabase.storage.from('session-files').upload(path, file);
+      if (upErr) throw upErr;
       const { data: { publicUrl } } = supabase.storage.from('session-files').getPublicUrl(path);
       await uploadToDB(publicUrl, 'photo');
-    } catch (err: any) { 
-      console.error("Erreur handlePhotoUpload:", err);
-    } finally { 
-      setLoading(false); 
-    }
+    } catch (err: any) { console.error(err); } finally { setLoading(false); }
   };
 
   if (!authLoaded) return <div className="h-[450px] flex items-center justify-center text-blue-400 italic">Chargement...</div>;
@@ -149,7 +121,9 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
   return (
     <div className="bg-blue-900 text-white rounded-[2.5rem] p-6 shadow-2xl flex flex-col border-4 border-blue-400 min-h-[450px] relative">
       <div className="mb-4">
-        <h2 className="text-xl font-black italic uppercase leading-none">Notes Générales</h2>
+        <h2 className="text-xl font-black italic uppercase leading-none">
+          {day === 'Général' || !day ? 'Notes de la semaine' : `Notes du ${day}`}
+        </h2>
         <span className="text-[10px] font-bold text-blue-300 uppercase tracking-widest">{day || 'Général'}</span>
       </div>
 
@@ -159,20 +133,15 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
             {info.type === 'text' && <p className="text-xs font-bold italic">{info.content}</p>}
             {info.type === 'audio' && <audio src={info.content} controls className="w-full h-8 invert opacity-70" />}
             {info.type === 'photo' && (
-              <img 
-                src={info.content} 
-                onClick={() => setSelectedPhoto(info.content)}
-                className="w-full rounded-xl cursor-zoom-in" 
-                alt="Note"
-              />
+              <img src={info.content} onClick={() => setSelectedPhoto(info.content)} className="w-full rounded-xl cursor-zoom-in" alt="Note" />
             )}
             
-            {isAdmin && (
+            {/* Suppression : Admin peut tout supprimer, l'élève seulement sa propre note */}
+            {(isAdmin || (user && user.id === info.author_id)) && (
               <button 
                 onClick={async () => { 
-                    // Optionnel : Ajouter ici la suppression du Storage avant la DB
-                    await supabase.from('week_infos').delete().eq('id', info.id); 
-                    fetchInfos(); 
+                  await supabase.from('week_infos').delete().eq('id', info.id); 
+                  fetchInfos(); 
                 }} 
                 className="absolute -top-1 -right-1 bg-red-500 rounded-full w-5 h-5 text-[8px] flex items-center justify-center"
               >✕</button>
@@ -181,7 +150,7 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
         ))}
       </div>
 
-      {isAdmin ? (
+      {canWrite ? (
         <div className="mt-auto">
           <div className="grid grid-cols-3 gap-2">
             <button onMouseDown={startRecording} onMouseUp={stopRecording} onTouchStart={startRecording} onTouchEnd={stopRecording}
@@ -198,14 +167,14 @@ export default function WeekGeneralInfo({ currentWeek, day }: any) {
 
           {isTyping && (
             <form onSubmit={(e) => { e.preventDefault(); if(inputValue.trim()) { uploadToDB(inputValue, 'text'); setInputValue(""); setIsTyping(false); } }} className="mt-3 flex gap-2">
-              <input autoFocus value={inputValue} onChange={e => setInputValue(e.target.value)} className="flex-1 bg-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none" placeholder="Écrire..." />
+              <input autoFocus value={inputValue} onChange={e => setInputValue(e.target.value)} className="flex-1 bg-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none" placeholder="Ajouter une note..." />
               <button type="submit" className="bg-white text-blue-900 px-4 rounded-xl font-black text-[10px]">OK</button>
             </form>
           )}
         </div>
       ) : (
         <div className="mt-auto py-3 text-center border-t border-blue-400/20">
-          <p className="text-[10px] font-bold text-blue-400 opacity-60">Mode Lecture Seule</p>
+          <p className="text-[10px] font-bold text-blue-400 opacity-60 uppercase italic tracking-widest">Lecture Seule (Semaine)</p>
         </div>
       )}
 
