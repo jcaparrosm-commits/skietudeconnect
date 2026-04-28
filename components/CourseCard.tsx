@@ -28,7 +28,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   }, [slotId, binomeId]);
 
   const fetchData = async () => {
-    // 1. Filtrage SQL : On ne télécharge pas les logs de statut
     const { data: messages, error: errorMessages } = await supabase
       .from('submissions')
       .select('*')
@@ -38,7 +37,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
       .not('comment', 'ilike', 'HIDDEN_LOG:%')
       .order('created_at', { ascending: false });
     
-    // 2. Récupération du statut réel pour la couleur
     const { data: statusData, error: errorStatus } = await supabase
       .from('submissions')
       .select('status')
@@ -53,6 +51,9 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
 
     if (!errorStatus && statusData && statusData.length > 0) {
       setStatus(statusData[0].status?.toLowerCase() || 'gris');
+    } else {
+      // Si aucune donnée de statut n'est trouvée (tout supprimé)
+      setStatus('gris');
     }
   };
 
@@ -104,7 +105,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   const sendText = async () => {
     if (!comment.trim()) return;
     setLoading(true);
-    await performInsert(status, comment.trim());
+    await performInsert(status === 'gris' ? 'orange' : status, comment.trim());
     setComment("");
     setLoading(false);
   };
@@ -117,7 +118,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
       const fileName = `${Date.now()}-${file.name}`;
       await supabase.storage.from('cours-documents').upload(fileName, file);
       const { data: { publicUrl } } = supabase.storage.from('cours-documents').getPublicUrl(fileName);
-      await performInsert(status, `Fichier : ${file.name}`, { file_url: publicUrl });
+      await performInsert(status === 'gris' ? 'orange' : status, `Fichier : ${file.name}`, { file_url: publicUrl });
     } catch (err) { alert("Erreur upload"); }
     setLoading(false);
   };
@@ -143,7 +144,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
           const fileName = `audio-${Date.now()}.${extension}`;
           await supabase.storage.from('cours-documents').upload(fileName, blob);
           const { data: { publicUrl } } = supabase.storage.from('cours-documents').getPublicUrl(fileName);
-          await performInsert(status, "Note Vocale", { audio_url: publicUrl });
+          await performInsert(status === 'gris' ? 'orange' : status, "Note Vocale", { audio_url: publicUrl });
         } catch (err) { console.error("Erreur audio:", err); }
         setLoading(false);
         setIsRecording(false);
@@ -162,12 +163,30 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
 
   const deleteItem = async (id: string) => {
     if (confirm("Supprimer ce message ?")) {
-      await supabase.from('submissions').delete().eq('id', id);
-      fetchData();
+      // 1. Suppression du message
+      const { error } = await supabase.from('submissions').delete().eq('id', id);
+      
+      if (!error) {
+        // 2. On vérifie s'il reste d'AUTRES messages ou logs pour cette case
+        const { data: remaining } = await supabase
+          .from('submissions')
+          .select('id')
+          .eq('course_name', slotId)
+          .eq('binome_id', binomeId)
+          .limit(1);
+
+        // 3. Si plus rien du tout, on reset l'état local immédiatement
+        if (!remaining || remaining.length === 0) {
+          setStatus('gris');
+          setSubmissions([]);
+        } else {
+          // Sinon on rafraîchit normalement
+          fetchData();
+        }
+      }
     }
   };
 
-  // Fonction utilitaire pour filtrer l'affichage côté client
   const filteredSubmissions = submissions.filter(s => 
     !s.comment.includes("HIDDEN_LOG:") && 
     !s.comment.toLowerCase().includes("statut mis à jour")
@@ -190,7 +209,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         </span>
       </div>
 
-      {/* Liste des messages filtrée à l'affichage */}
+      {/* Liste des messages */}
       <div className="p-2 flex-1 overflow-y-auto space-y-2 bg-gray-50/50">
         {filteredSubmissions.length === 0 && (
           <div className="h-full flex items-center justify-center text-[10px] font-bold text-gray-300 uppercase italic">Aucune activité</div>
