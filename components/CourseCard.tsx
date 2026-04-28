@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-// Import de l'icône de téléchargement
 import { Download } from 'lucide-react';
 
 export default function CourseCard({ slot, profile, currentWeek, day, binomeId }: any) {
@@ -29,16 +28,31 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   }, [slotId, binomeId]);
 
   const fetchData = async () => {
-    const { data, error } = await supabase
+    // 1. Filtrage SQL : On ne télécharge pas les logs de statut
+    const { data: messages, error: errorMessages } = await supabase
       .from('submissions')
       .select('*')
       .eq('course_name', slotId)
       .eq('binome_id', binomeId)
+      .not('comment', 'ilike', '%statut%')
+      .not('comment', 'ilike', 'HIDDEN_LOG:%')
       .order('created_at', { ascending: false });
     
-    if (!error && data) {
-      setSubmissions(data);
-      setStatus(data[0]?.status?.toLowerCase() || 'gris');
+    // 2. Récupération du statut réel pour la couleur
+    const { data: statusData, error: errorStatus } = await supabase
+      .from('submissions')
+      .select('status')
+      .eq('course_name', slotId)
+      .eq('binome_id', binomeId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (!errorMessages && messages) {
+      setSubmissions(messages);
+    }
+
+    if (!errorStatus && statusData && statusData.length > 0) {
+      setStatus(statusData[0].status?.toLowerCase() || 'gris');
     }
   };
 
@@ -73,7 +87,9 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
           await supabase.from('notifications').insert({
             user_id: targetId,
             sender_name: profile?.prenom || 'Ton binôme',
-            content: `Modif sur ${day} (${slot.time}) : ${finalComment.substring(0, 30)}...`,
+            content: finalComment.startsWith('HIDDEN_LOG:') 
+              ? `Nouveau statut : ${finalStatus}` 
+              : `Modif sur ${day} (${slot.time}) : ${finalComment.substring(0, 30)}...`,
             link: day
           });
         }
@@ -88,7 +104,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
   const sendText = async () => {
     if (!comment.trim()) return;
     setLoading(true);
-    await performInsert('orange', comment.trim());
+    await performInsert(status, comment.trim());
     setComment("");
     setLoading(false);
   };
@@ -101,7 +117,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
       const fileName = `${Date.now()}-${file.name}`;
       await supabase.storage.from('cours-documents').upload(fileName, file);
       const { data: { publicUrl } } = supabase.storage.from('cours-documents').getPublicUrl(fileName);
-      await performInsert('orange', `Fichier : ${file.name}`, { file_url: publicUrl });
+      await performInsert(status, `Fichier : ${file.name}`, { file_url: publicUrl });
     } catch (err) { alert("Erreur upload"); }
     setLoading(false);
   };
@@ -127,7 +143,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
           const fileName = `audio-${Date.now()}.${extension}`;
           await supabase.storage.from('cours-documents').upload(fileName, blob);
           const { data: { publicUrl } } = supabase.storage.from('cours-documents').getPublicUrl(fileName);
-          await performInsert('orange', "Note Vocale", { audio_url: publicUrl });
+          await performInsert(status, "Note Vocale", { audio_url: publicUrl });
         } catch (err) { console.error("Erreur audio:", err); }
         setLoading(false);
         setIsRecording(false);
@@ -141,7 +157,7 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
 
   const updateStatus = async (newColor: string) => {
     const color = newColor.toLowerCase().trim();
-    await performInsert(color, `Statut mis à jour : ${color}`); 
+    await performInsert(color, `HIDDEN_LOG: Statut passé à ${color}`); 
   };
 
   const deleteItem = async (id: string) => {
@@ -150,6 +166,12 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
       fetchData();
     }
   };
+
+  // Fonction utilitaire pour filtrer l'affichage côté client
+  const filteredSubmissions = submissions.filter(s => 
+    !s.comment.includes("HIDDEN_LOG:") && 
+    !s.comment.toLowerCase().includes("statut mis à jour")
+  );
 
   return (
     <div className={`bg-white rounded-3xl shadow-md border-l-[10px] flex flex-col h-full min-h-[350px] overflow-hidden transition-all duration-500 ${statusStyles[status]?.border || 'border-gray-200'}`}>
@@ -168,12 +190,12 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         </span>
       </div>
 
-      {/* Liste des messages */}
+      {/* Liste des messages filtrée à l'affichage */}
       <div className="p-2 flex-1 overflow-y-auto space-y-2 bg-gray-50/50">
-        {submissions.length === 0 && (
+        {filteredSubmissions.length === 0 && (
           <div className="h-full flex items-center justify-center text-[10px] font-bold text-gray-300 uppercase italic">Aucune activité</div>
         )}
-        {submissions.map((s) => (
+        {filteredSubmissions.map((s) => (
           <div key={s.id} className="bg-white p-2.5 rounded-2xl shadow-sm border border-gray-100 relative group animate-in fade-in slide-in-from-bottom-1">
             <button onClick={() => deleteItem(s.id)} className="absolute top-1 right-1 text-red-400 opacity-0 group-hover:opacity-100 p-1 transition-opacity">✕</button>
             <div className="flex justify-between items-center mb-1 text-[7px] font-black text-blue-400 uppercase italic tracking-widest">
@@ -182,7 +204,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
             </div>
             <p className="text-[10px] font-bold uppercase italic leading-tight text-gray-800">{s.comment}</p>
             
-            {/* AFFICHAGE FICHIERS / IMAGES AVEC BOUTON TELECHARGEMENT */}
             {s.file_url && (
               <div className="mt-2 space-y-2">
                 {s.file_url.match(/\.(jpeg|jpg|gif|png)$/i) ? (
@@ -193,7 +214,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
                       className="w-full h-32 object-cover rounded-xl border border-gray-100 cursor-zoom-in" 
                       alt="Doc" 
                     />
-                    {/* Bouton téléchargement pour Image */}
                     <a 
                       href={s.file_url} 
                       download 
@@ -204,7 +224,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
                     </a>
                   </div>
                 ) : (
-                  /* Bouton téléchargement pour Document (PDF, etc) */
                   <a 
                     href={s.file_url} 
                     target="_blank" 
