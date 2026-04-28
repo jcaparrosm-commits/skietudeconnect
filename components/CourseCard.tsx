@@ -1,6 +1,8 @@
 "use client";
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+// Import de l'icône de téléchargement
+import { Download } from 'lucide-react';
 
 export default function CourseCard({ slot, profile, currentWeek, day, binomeId }: any) {
   const [loading, setLoading] = useState(false);
@@ -40,10 +42,8 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
     }
   };
 
-  // --- LOGIQUE DE NOTIFICATION INTÉGRÉE ---
   const performInsert = async (finalStatus: string, finalComment: string, extras = {}) => {
     try {
-      // 1. Insertion dans la table submissions
       const { error: insertError } = await supabase.from('submissions').insert({
         course_name: slotId,
         day_name: day.toLowerCase().trim(),
@@ -58,7 +58,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
 
       if (insertError) throw insertError;
 
-      // 2. Envoi de la notification au partenaire
       const { data: binomeData } = await supabase
         .from('binomes')
         .select('skieur_id, collaborateur_id')
@@ -66,7 +65,6 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
         .single();
 
       if (binomeData) {
-        // Déterminer qui reçoit (si je suis skieur, c'est le coach qui reçoit)
         const targetId = profile.id === binomeData.skieur_id 
           ? binomeData.collaborateur_id 
           : binomeData.skieur_id;
@@ -183,15 +181,42 @@ export default function CourseCard({ slot, profile, currentWeek, day, binomeId }
               <span>{new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
             </div>
             <p className="text-[10px] font-bold uppercase italic leading-tight text-gray-800">{s.comment}</p>
+            
+            {/* AFFICHAGE FICHIERS / IMAGES AVEC BOUTON TELECHARGEMENT */}
             {s.file_url && (
-              <div className="mt-2">
+              <div className="mt-2 space-y-2">
                 {s.file_url.match(/\.(jpeg|jpg|gif|png)$/i) ? (
-                  <img src={s.file_url} onClick={() => setZoomedImage(s.file_url)} className="w-full h-32 object-cover rounded-xl border border-gray-100 cursor-zoom-in" alt="Doc" />
+                  <div className="relative group/img">
+                    <img 
+                      src={s.file_url} 
+                      onClick={() => setZoomedImage(s.file_url)} 
+                      className="w-full h-32 object-cover rounded-xl border border-gray-100 cursor-zoom-in" 
+                      alt="Doc" 
+                    />
+                    {/* Bouton téléchargement pour Image */}
+                    <a 
+                      href={s.file_url} 
+                      download 
+                      target="_blank"
+                      className="flex items-center justify-center gap-1 mt-1 bg-gray-900/80 text-white p-2 rounded-xl text-[8px] font-black uppercase italic tracking-tighter"
+                    >
+                      <Download size={10} /> Enregistrer la photo
+                    </a>
+                  </div>
                 ) : (
-                  <a href={s.file_url} target="_blank" className="block bg-blue-50 p-2 rounded-xl text-[8px] font-black text-blue-600 text-center uppercase tracking-widest border border-blue-100">📥 Voir le document</a>
+                  /* Bouton téléchargement pour Document (PDF, etc) */
+                  <a 
+                    href={s.file_url} 
+                    target="_blank" 
+                    download
+                    className="flex items-center justify-center gap-2 bg-blue-600 p-2.5 rounded-xl text-[8px] font-black text-white text-center uppercase tracking-widest border border-blue-700 shadow-sm"
+                  >
+                    <Download size={12} /> Télécharger le document
+                  </a>
                 )}
               </div>
             )}
+            
             {s.audio_url && <audio src={s.audio_url} controls className="h-7 w-full mt-2" />}
           </div>
         ))}
